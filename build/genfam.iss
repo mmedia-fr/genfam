@@ -1,4 +1,4 @@
-\xef\xbb\xbf; Installeur Windows de GenFam (Inno Setup 6).
+﻿; Installeur Windows de GenFam (Inno Setup 6).
 ;
 ; Compilation : ISCC.exe /DAppVersion=8.0.0 build\genfam.iss
 ; Prérequis   : dist\GenFam\ contient GenFam.exe et les bibliothèques Qt (windeployqt).
