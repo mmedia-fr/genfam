@@ -1,11 +1,11 @@
 ﻿; Installeur Windows de GenFam (Inno Setup 6).
 ;
-; Compilation : ISCC.exe /DAppVersion=8.0.0 build\genfam.iss
+; Compilation : ISCC.exe /DAppVersion=8.0.1 build\genfam.iss
 ; Prérequis   : dist\GenFam\ contient GenFam.exe et les bibliothèques Qt (windeployqt).
 ; Sortie      : dist\GenFam-<version>-setup.exe
 
 #ifndef AppVersion
-  #define AppVersion "8.0.0"
+  #define AppVersion "8.0.1"
 #endif
 #define AppName        "GenFam"
 #define AppLongName    "GenFam — Généalogie"

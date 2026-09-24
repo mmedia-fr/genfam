@@ -66,6 +66,14 @@ jobs:
           mkdir -p dist/GenFam
           cp _build/genfam.exe dist/GenFam/GenFam.exe
           "$QT_ROOT_DIR/bin/windeployqt.exe" --release --qmldir core/qml dist/GenFam/GenFam.exe
+          # Runtime Visual C++ (Qt, main.cpp et le noyau Rust en dépendent) déposé à côté
+          # de l'exécutable : l'installation se fait sans élévation, et vc_redist.x64.exe,
+          # que windeployqt joint sans le lancer, en exigerait une.
+          rm -f dist/GenFam/vc_redist*.exe
+          crt=$(ls -d "$(cygpath -u "$VCToolsRedistDir")"x64/Microsoft.VC14*.CRT | head -1)
+          test -d "$crt"
+          cp "$crt"/*.dll dist/GenFam/
+          for dll in vcruntime140.dll vcruntime140_1.dll msvcp140.dll; do test -f "dist/GenFam/$dll"; done
           # Sans la plateforme offscreen, aucune installation ne se contrôle sans session.
           cp "$QT_ROOT_DIR/plugins/platforms/qoffscreen.dll" dist/GenFam/platforms/
           iscc="/c/Program Files (x86)/Inno Setup 6/ISCC.exe"
@@ -90,6 +98,9 @@ jobs:
           $setup = Get-ChildItem dist\GenFam-*-setup.exe | Select-Object -First 1
           $p = Start-Process -FilePath $setup.FullName -ArgumentList "/VERYSILENT", "/SUPPRESSMSGBOXES", "/CURRENTUSER", "/DIR=`"$env:RUNNER_TEMP\GenFamInstalle`"" -Wait -PassThru
           if ($p.ExitCode -ne 0) { throw "installation en echec : code $($p.ExitCode)" }
+          foreach ($dll in "vcruntime140.dll", "vcruntime140_1.dll", "msvcp140.dll") {
+            if (-not (Test-Path "$env:RUNNER_TEMP\GenFamInstalle\$dll")) { throw "runtime Visual C++ absent de l'installe : $dll" }
+          }
           $env:QT_QPA_PLATFORM = "offscreen"
           $ged = (Resolve-Path core/tests/donnees/exemple.ged).Path
           $q = Start-Process -FilePath "$env:RUNNER_TEMP\GenFamInstalle\GenFam.exe" -ArgumentList "--smoke", ('"' + $ged + '"') -Wait -PassThru -NoNewWindow
