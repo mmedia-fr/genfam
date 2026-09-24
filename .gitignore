@@ -1,0 +1,6 @@
+/_build/
+/build-*/
+/dist/
+/core/target/
+*.bak
+*.ordonnances.json

@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=GenFam
+GenericName=Généalogie
+Comment=Exploration et gestion de fichiers GEDCOM, liaison FamilySearch
+Exec=genfam %f
+Icon=genfam
+Categories=Office;
+MimeType=application/x-gedcom;

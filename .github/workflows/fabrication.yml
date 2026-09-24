@@ -1,0 +1,137 @@
+# GenFam (Rust / Qt 6) — fabrication continue : Windows (installeur) et Linux.
+#
+# Chaque cible se construit, passe les tests du noyau et le test de fumée, puis
+# s'empaquette ; le test de fumée est rejoué sur le paquet, qui est ce que reçoit
+# le poste.
+name: fabrication
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch:
+
+env:
+  QT_VERSION: "6.8.3"
+  CARGO_TERM_COLOR: always
+
+jobs:
+  bureau:
+    name: ${{ matrix.nom }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { nom: linux,   os: ubuntu-24.04 }
+          - { nom: windows, os: windows-2022 }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: core -> ../_build/cargo
+      - uses: jurplel/install-qt-action@v4
+        with:
+          version: ${{ env.QT_VERSION }}
+          modules: ""
+          cache: true
+      - name: Dépendances Linux
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y libgl1-mesa-dev libxkbcommon-dev ninja-build
+      - name: MSVC
+        if: runner.os == 'Windows'
+        uses: ilammy/msvc-dev-cmd@v1
+      - name: Configuration
+        run: cmake -S . -B _build -G Ninja -DCMAKE_BUILD_TYPE=Release
+        shell: bash
+      - name: Construction
+        run: cmake --build _build --config Release
+      - name: Tests du noyau
+        run: cargo test --manifest-path core/Cargo.toml
+      - name: Test de fumée
+        run: ctest --test-dir _build --output-on-failure -C Release
+        env:
+          QT_QPA_PLATFORM: offscreen
+
+      # ---- Windows : l'installeur ------------------------------------------
+      - name: Paquet Windows
+        if: runner.os == 'Windows'
+        shell: bash
+        run: |
+          set -euo pipefail
+          version=$(sed -n 's/^project(genfam VERSION \([0-9.]*\).*/\1/p' CMakeLists.txt)
+          test -n "$version"
+          mkdir -p dist/GenFam
+          cp _build/genfam.exe dist/GenFam/GenFam.exe
+          "$QT_ROOT_DIR/bin/windeployqt.exe" --release --qmldir core/qml dist/GenFam/GenFam.exe
+          # Sans la plateforme offscreen, aucune installation ne se contrôle sans session.
+          cp "$QT_ROOT_DIR/plugins/platforms/qoffscreen.dll" dist/GenFam/platforms/
+          iscc="/c/Program Files (x86)/Inno Setup 6/ISCC.exe"
+          test -f "$iscc"
+          # Double barre : sous Git Bash, « /D… » serait converti en chemin.
+          "$iscc" "//DAppVersion=$version" build/genfam.iss
+          test -f "dist/GenFam-$version-setup.exe"
+      - name: Contrôle du paquet Windows (chemin accentué)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $nom = Join-Path $PWD ("G" + [char]0xE9 + "n" + [char]0xE9 + "alogie essai.ged")
+          Copy-Item core/tests/donnees/exemple.ged $nom
+          $env:QT_QPA_PLATFORM = "offscreen"
+          $p = Start-Process -FilePath ".\dist\GenFam\GenFam.exe" `
+            -ArgumentList "--smoke", ('"' + $nom + '"') -Wait -PassThru -NoNewWindow
+          if ($p.ExitCode -ne 0) { throw "controle en echec : code $($p.ExitCode)" }
+      - name: Installation silencieuse et contrôle de l'installé
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $setup = Get-ChildItem dist\GenFam-*-setup.exe | Select-Object -First 1
+          $p = Start-Process -FilePath $setup.FullName -ArgumentList "/VERYSILENT", "/SUPPRESSMSGBOXES", "/CURRENTUSER", "/DIR=`"$env:RUNNER_TEMP\GenFamInstalle`"" -Wait -PassThru
+          if ($p.ExitCode -ne 0) { throw "installation en echec : code $($p.ExitCode)" }
+          $env:QT_QPA_PLATFORM = "offscreen"
+          $ged = (Resolve-Path core/tests/donnees/exemple.ged).Path
+          $q = Start-Process -FilePath "$env:RUNNER_TEMP\GenFamInstalle\GenFam.exe" -ArgumentList "--smoke", ('"' + $ged + '"') -Wait -PassThru -NoNewWindow
+          if ($q.ExitCode -ne 0) { throw "programme installe en echec : code $($q.ExitCode)" }
+      - name: Dépôt de l'installeur Windows
+        if: runner.os == 'Windows'
+        uses: actions/upload-artifact@v4
+        with:
+          name: genfam-windows-setup
+          path: dist/*-setup.exe
+          if-no-files-found: error
+
+      # ---- Linux : AppImage ---------------------------------------------------
+      - name: Paquet Linux
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          set -euo pipefail
+          version=$(sed -n 's/^project(genfam VERSION \([0-9.]*\).*/\1/p' CMakeLists.txt)
+          cmake --install _build --prefix AppDir/usr
+          install -Dm644 packaging/genfam.desktop AppDir/usr/share/applications/genfam.desktop
+          install -Dm644 assets/genfam.png AppDir/usr/share/icons/hicolor/256x256/apps/genfam.png
+          base=https://github.com/linuxdeploy
+          curl -sSL -o linuxdeploy.AppImage "$base/linuxdeploy/releases/download/continuous/linuxdeploy-x86_64.AppImage"
+          curl -sSL -o linuxdeploy-plugin-qt.AppImage "$base/linuxdeploy-plugin-qt/releases/download/continuous/linuxdeploy-plugin-qt-x86_64.AppImage"
+          chmod +x linuxdeploy.AppImage linuxdeploy-plugin-qt.AppImage
+          export APPIMAGE_EXTRACT_AND_RUN=1
+          export QML_SOURCES_PATHS=core/qml
+          export OUTPUT="GenFam-$version-x86_64.AppImage"
+          ./linuxdeploy.AppImage --appdir AppDir --plugin qt --output appimage
+          mkdir -p dist && mv "$OUTPUT" dist/
+      - name: Contrôle du paquet Linux
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          export APPIMAGE_EXTRACT_AND_RUN=1
+          cp core/tests/donnees/exemple.ged "Généalogie essai.ged"
+          QT_QPA_PLATFORM=offscreen ./dist/GenFam-*-x86_64.AppImage --smoke "Généalogie essai.ged"
+      - name: Dépôt de l'AppImage
+        if: runner.os == 'Linux'
+        uses: actions/upload-artifact@v4
+        with:
+          name: genfam-linux-appimage
+          path: dist/*.AppImage
+          if-no-files-found: error
