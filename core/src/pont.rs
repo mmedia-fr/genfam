@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 //! Objet exposé à QML : l'état du fichier ouvert et tous les services du noyau.
 //!
 //! Les listes et mises en page passent en JSON : QML les lit par `JSON.parse`, ce

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 // Écran de démarrage : choix de la généalogie à charger (startup_gedcom_choice).
 import QtQuick
 import QtQuick.Controls

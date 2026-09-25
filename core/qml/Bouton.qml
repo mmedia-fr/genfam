@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 // Bouton coloré, repris de l'habillage de la version Python (styles ttk « Primary »,
 // « Green », « Orange », « Purple », « Red », « Light »).
 import QtQuick

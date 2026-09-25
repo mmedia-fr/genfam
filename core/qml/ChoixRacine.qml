@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 // Choix de la personne N° 1 de la numérotation Ahnentafel (choose_ahnentafel_root).
 import QtQuick
 import QtQuick.Controls

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 // Ajout et suppression de personnes (manage_persons), avec annulation de la
 // dernière modification par la sauvegarde .bak.
 import QtQuick

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 //! Liaison FamilySearch : connexion OAuth 2.0 (Authorization Code + PKCE) et import
 //! de l'ascendance d'une personne dans le GEDCOM ouvert.
 //!

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 // Fenêtre principale de GenFam : liste des personnes à gauche, informations à droite.
 //
 // Écrit pour Qt 6.4 (machine de développement) et compilé en 6.8 par l'intégration

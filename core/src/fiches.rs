@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 //! Présentations d'une personne : fiche complète, famille, ascendants, descendants.
 //!
 //! Chacune se rend deux fois : en HTML pour le panneau d'information (sous-ensemble

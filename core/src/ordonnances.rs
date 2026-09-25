@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 //! Ordonnances : données locales, hors GEDCOM.
 //!
 //! La version Python les gardait en mémoire seulement — elles étaient perdues à la

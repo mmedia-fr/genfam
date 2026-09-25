@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 // Connexion à FamilySearch et import de l'ascendance d'une personne.
 //
 // L'App Key et l'environnement sont retenus d'une session à l'autre. Le mot de passe

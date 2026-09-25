@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 //! Noyau Rust de GenFam : lecture et modification GEDCOM, requêtes généalogiques,
 //! présentations, pedigree, ordonnances et liaison FamilySearch.
 //!

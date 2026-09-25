@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 // GenFam — point d'entrée : application Qt, moteur QML et contrôles de fabrication.
 #include <QtCore/QCoreApplication>
 #include <QtCore/QFileInfo>

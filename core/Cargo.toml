@@ -3,6 +3,7 @@ name = "genfam_core"
 version = "8.0.1"
 edition = "2021"
 rust-version = "1.85"
+license = "GPL-3.0-or-later"
 publish = false
 
 [lib]

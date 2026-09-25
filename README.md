@@ -5,8 +5,8 @@ exploration d'une famille, pedigree interactif, numérotation Ahnentafel, ordonn
 et import de l'ascendance depuis FamilySearch.
 
 Conçu par **Claude Boisseau** (version Python / Tkinter, `GENFAMILLE.pyw`, V7.6).
-Portage en Rust / Qt 6 et liaison FamilySearch : M-Media. Tous droits réservés à
-l'auteur tant qu'aucune licence n'a été choisie.
+Portage en Rust / Qt 6 et liaison FamilySearch : M-Media. Logiciel libre, sous
+licence GNU GPL v3 ou ultérieure (voir [Licence](#licence)).
 
 ## Fonctions
 
@@ -56,3 +56,15 @@ QML (`core/qml/`), point d'entrée C++ (`cpp/main.cpp`). Qt 6.4 minimum.
 
 L'intégration continue (`.github/workflows/fabrication.yml`) produit l'installeur
 Windows (Inno Setup, `build/genfam.iss`) et une AppImage Linux.
+
+## Licence
+
+**GNU General Public License version 3** ou ultérieure — copyleft. Texte
+intégral dans [`LICENSE`](LICENSE), présenté à l'installation.
+
+Quiconque reçoit le programme peut l'utiliser, l'étudier, le modifier et le
+redistribuer, **à condition d'accorder les mêmes libertés**, code source
+inclus, sous la même licence.
+
+Qt est sous **LGPL v3**, compatible avec la GPL v3 ; cxx-qt est sous licence
+MIT ou Apache 2.0.
