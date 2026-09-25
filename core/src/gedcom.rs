@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 //! Lecture et modification d'un fichier GEDCOM.
 //!
 //! Comme la version Python, les modifications travaillent **ligne à ligne** sur le

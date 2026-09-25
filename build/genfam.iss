@@ -26,6 +26,9 @@ UninstallDisplayName={#AppLongName} {#AppVersion}
 OutputDir=..\dist
 OutputBaseFilename={#AppName}-{#AppVersion}-setup
 SetupIconFile=..\assets\genfam.ico
+; Licence présentée à l'installation (exigence morale du copyleft : l'utilisateur
+; doit savoir sous quels termes il reçoit le programme).
+LicenseFile=..\LICENSE
 Compression=lzma2/max
 SolidCompression=yes
 WizardStyle=modern
@@ -48,6 +51,7 @@ Name: "associer"; Description: "Ouvrir les fichiers .ged avec {#AppName}"; Group
 [Files]
 Source: "..\dist\GenFam\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 Source: "..\README.md";     DestDir: "{app}"; Flags: ignoreversion
+Source: "..\LICENSE";       DestDir: "{app}"; Flags: ignoreversion
 
 [Icons]
 Name: "{autoprograms}\{#AppLongName}"; Filename: "{app}\{#AppExe}"

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 //! Mise en page du pedigree : cartes, traits et libellés de génération.
 //!
 //! Le calcul est celui de show_pedigree() de la version Python : ascendants au-dessus,

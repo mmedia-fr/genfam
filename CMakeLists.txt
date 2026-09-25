@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
 # GenFam — noyau Rust (core/), interface Qt 6 / QML. Socle MMEDIA (cf. MMdedit).
 cmake_minimum_required(VERSION 3.24)
 project(genfam VERSION 8.0.1 LANGUAGES CXX)

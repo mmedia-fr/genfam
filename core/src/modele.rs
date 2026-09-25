@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 //! Modèle généalogique : personnes, familles, et les requêtes qui les relient.
 //!
 //! Portage de GENFAMILLE.pyw (Claude Boisseau, V7.6) : les règles de parenté,

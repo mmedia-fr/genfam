@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
 # GenFam (Rust / Qt 6) — fabrication continue : Windows (installeur) et Linux.
 #
 # Chaque cible se construit, passe les tests du noyau et le test de fumée, puis

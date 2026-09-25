@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 // Ordonnances d'une personne (show_ordinances) — données locales, hors GEDCOM.
 import QtQuick
 import QtQuick.Controls

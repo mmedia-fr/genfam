@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 // Pedigree familial interactif (show_pedigree) : un clic sur une carte la place au
 // centre ; le nombre de générations et le zoom se règlent dans la barre d'outils.
 // La mise en page est calculée par le noyau ; ici, on ne fait que la dessiner.
