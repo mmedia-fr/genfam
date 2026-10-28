@@ -13,6 +13,7 @@ fn main() {
         "qml/Ordonnances.qml",
         "qml/Pedigree.qml",
         "qml/FamilySearch.qml",
+        "qml/Recherche.qml",
         "qml/Bouton.qml",
     ]))
     .qt_module("Qml")

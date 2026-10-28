@@ -139,6 +139,40 @@ pub mod qobject {
         #[qinvokable]
         #[cxx_name = "importer"]
         fn importer(self: Pin<&mut Genealogie>, id: &QString, fsid: &QString, generations: i32);
+
+        /// Recherche d'ascendance : état général (JSON).
+        #[qinvokable]
+        #[cxx_name = "recherche"]
+        fn etat_recherche(&self) -> QString;
+
+        /// Lance (ou actualise) la recherche depuis une personne.
+        #[qinvokable]
+        #[cxx_name = "rechercheLancer"]
+        fn recherche_lancer(self: Pin<&mut Genealogie>, id: &QString, generations: i32) -> QString;
+
+        /// Détail d'une personne à compléter : candidats, tentatives, liens de recherche.
+        #[qinvokable]
+        #[cxx_name = "rechercheTravail"]
+        fn recherche_travail(&self, personne: &QString) -> QString;
+
+        /// Ajoute un candidat relevé à la main dans un acte.
+        #[qinvokable]
+        #[cxx_name = "rechercheSaisir"]
+        fn recherche_saisir(self: Pin<&mut Genealogie>, personne: &QString, champs: &QString) -> QString;
+
+        /// « accepter » (écrit le lien dans le GEDCOM), « rejeter » ou « attente ».
+        #[qinvokable]
+        #[cxx_name = "rechercheDecider"]
+        fn recherche_decider(self: Pin<&mut Genealogie>, personne: &QString, candidat: &QString, action: &QString) -> QString;
+
+        #[qinvokable]
+        #[cxx_name = "rechercheSansIssue"]
+        fn recherche_sans_issue(self: Pin<&mut Genealogie>, personne: &QString, valeur: bool) -> QString;
+
+        /// Interroge l'arbre FamilySearch (session ouverte) ; résultat dans `message`.
+        #[qinvokable]
+        #[cxx_name = "rechercheFamilySearch"]
+        fn recherche_familysearch(self: Pin<&mut Genealogie>, personne: &QString);
     }
 
     impl cxx_qt::Threading for Genealogie {}
@@ -149,6 +183,7 @@ use crate::fiches::{self, Vue};
 use crate::gedcom::{self, Document};
 use crate::modele::{libelle_numeros, Arbre, Personne, Tri};
 use crate::ordonnances::{self, Ordonnance, Registre};
+use crate::recherche::{self, Candidat, Recherche, Role, Source};
 use core::pin::Pin;
 use cxx_qt::{CxxQtType, Threading};
 use cxx_qt_lib::QString;
@@ -173,6 +208,7 @@ pub struct GenealogieRust {
     registre: Registre,
     jeton: Option<String>,
     env: Environnement,
+    recherche: Option<Recherche>,
 }
 
 impl Default for GenealogieRust {
@@ -193,6 +229,7 @@ impl Default for GenealogieRust {
             registre: Registre::new(),
             jeton: None,
             env: Environnement::Integration,
+            recherche: None,
         }
     }
 }
@@ -270,6 +307,11 @@ impl qobject::Genealogie {
         {
             let mut r = self.as_mut().rust_mut();
             r.registre = ordonnances::charger(chemin);
+            let mut suivi = recherche::charger(chemin);
+            if let Some(s) = suivi.as_mut() {
+                s.actualiser(&arbre);
+            }
+            r.recherche = suivi;
             r.arbre = arbre;
             r.chemin = Some(chemin.to_path_buf());
         }
@@ -321,6 +363,9 @@ impl qobject::Genealogie {
         }
         let registre = self.rust().registre.clone();
         let _ = ordonnances::enregistrer(&cible, &registre);
+        if let Some(s) = self.rust().recherche.clone() {
+            let _ = recherche::enregistrer(&cible, &s);
+        }
         self.as_mut().rust_mut().chemin = Some(cible.clone());
         let nom = cible.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
         self.as_mut().set_fichier(q(&nom));
@@ -334,6 +379,7 @@ impl qobject::Genealogie {
             r.chemin = None;
             r.arbre = Arbre::default();
             r.registre.clear();
+            r.recherche = None;
         }
         self.as_mut().set_fichier(q(""));
         self.as_mut().set_racine(q(""));
@@ -656,6 +702,320 @@ impl qobject::Genealogie {
                     Ok(()) => o.as_mut().set_message(q(&texte)),
                     Err(e) => o.as_mut().set_message(q(&format!("Import non enregistré : {e}"))),
                 }
+            });
+        });
+    }
+
+    // ---- Recherche d'ascendance ------------------------------------------------
+
+    fn sauver_recherche(&self) -> Result<(), String> {
+        let r = self.rust();
+        let (Some(chemin), Some(s)) = (r.chemin.as_ref(), r.recherche.as_ref()) else { return Ok(()) };
+        recherche::enregistrer(chemin, s).map_err(|e| format!("Suivi de la recherche non enregistré :\n\n{e}"))
+    }
+
+    fn signaler_recherche(mut self: Pin<&mut Self>) {
+        let rev = *self.revision() + 1;
+        self.as_mut().set_revision(rev);
+    }
+
+    pub fn etat_recherche(&self) -> QString {
+        let r = self.rust();
+        let Some(s) = r.recherche.as_ref() else { return q(&json!({"active": false}).to_string()) };
+        let mut a_faire = 0;
+        let travaux: Vec<Value> = s
+            .travaux
+            .iter()
+            .map(|t| {
+                let p = r.arbre.personne(&t.personne);
+                let manque = p.map(|p| recherche::manquants(&r.arbre, p)).unwrap_or_default();
+                if p.is_some() && !manque.is_empty() && !t.sans_issue {
+                    a_faire += 1;
+                }
+                json!({
+                    "personne": t.personne,
+                    "nom": p.map(|p| p.nom_affiche()).unwrap_or_else(|| format!("{} (absente du fichier)", t.personne)),
+                    "naissance": p.map(|p| p.naissance.clone()).unwrap_or_default(),
+                    "generation": t.generation,
+                    "manque": recherche::libelle_manque(&manque),
+                    "complet": p.is_some() && manque.is_empty(),
+                    "sansIssue": t.sans_issue,
+                    "candidats": t.candidats.len(),
+                    "ouverts": t.candidats.iter().filter(|c| c.etat.ouvert()).count(),
+                })
+            })
+            .collect();
+        q(&json!({
+            "active": true,
+            "depart": s.depart,
+            "departNom": r.arbre.personne(&s.depart).map(|p| p.nom_affiche()).unwrap_or_default(),
+            "generationsMax": s.generations_max,
+            "aFaire": a_faire,
+            "travaux": travaux,
+        })
+        .to_string())
+    }
+
+    pub fn recherche_lancer(mut self: Pin<&mut Self>, id: &QString, generations: i32) -> QString {
+        let id = id.to_string();
+        if self.rust().chemin.is_none() {
+            return resultat(false, "Créez ou ouvrez d'abord un fichier GEDCOM.");
+        }
+        if self.rust().arbre.personne(&id).is_none() {
+            return resultat(false, "Sélectionnez d'abord une personne dans la liste principale.");
+        }
+        let g = generations.clamp(1, recherche::GENERATIONS_MAX as i32) as u32;
+        let suivi = {
+            let r = self.rust();
+            match r.recherche.as_ref() {
+                Some(s) if s.depart == id => {
+                    let mut s = s.clone();
+                    s.generations_max = g;
+                    s.actualiser(&r.arbre);
+                    s
+                }
+                _ => Recherche::nouvelle(&r.arbre, &id, g),
+            }
+        };
+        let n = suivi.travaux.len();
+        self.as_mut().rust_mut().recherche = Some(suivi);
+        if let Err(e) = self.sauver_recherche() {
+            return resultat(false, &e);
+        }
+        self.as_mut().signaler_recherche();
+        let texte = if n == 0 {
+            format!("Aucun parent manquant jusqu'à la génération {g}.")
+        } else {
+            format!("{n} personne(s) de l'ascendance à compléter, jusqu'à la génération {g}.")
+        };
+        resultat(true, &texte)
+    }
+
+    pub fn recherche_travail(&self, personne: &QString) -> QString {
+        let r = self.rust();
+        let id = personne.to_string();
+        let (Some(s), Some(p)) = (r.recherche.as_ref(), r.arbre.personne(&id)) else { return q("{}") };
+        let Some(t) = s.travail(&id) else { return q("{}") };
+        let (pere, mere) = r.arbre.pere_mere(p);
+        let manque = recherche::manquants(&r.arbre, p);
+        let candidats: Vec<Value> = t
+            .candidats
+            .iter()
+            .map(|c| {
+                let sources: Vec<Value> = c
+                    .sources
+                    .iter()
+                    .map(|x| json!({"description": x.description(), "url": x.url, "extrait": x.extrait, "consulteLe": x.consulte_le}))
+                    .collect();
+                json!({
+                    "id": c.id,
+                    "role": c.role.cle(),
+                    "roleLibelle": c.role.libelle(),
+                    "nom": c.nom_complet(),
+                    "naissance": c.naissance,
+                    "lieuNaissance": c.lieu_naissance,
+                    "deces": c.deces,
+                    "lieuDeces": c.lieu_deces,
+                    "fsid": c.fsid,
+                    "provenance": c.provenance,
+                    "score": c.score,
+                    "motifs": c.motifs,
+                    "alertes": c.alertes,
+                    "etat": c.etat.cle(),
+                    "etatLibelle": c.etat.libelle(),
+                    "ouvert": c.etat.ouvert(),
+                    "placeLibre": manque.contains(&c.role),
+                    "personne": c.personne,
+                    "sources": sources,
+                })
+            })
+            .collect();
+        let tentatives: Vec<Value> =
+            t.tentatives.iter().rev().take(30).map(|x| json!({"date": x.date, "source": x.source, "resultat": x.resultat})).collect();
+        let liens: Vec<Value> = recherche::liens(p).into_iter().map(|(l, u)| json!({"libelle": l, "url": u})).collect();
+        let manque: Vec<&str> = manque.iter().map(|m| m.cle()).collect();
+        q(&json!({
+            "personne": id,
+            "nom": p.nom_affiche(),
+            "naissance": p.naissance,
+            "lieuNaissance": p.lieu_naissance,
+            "deces": p.deces,
+            "lieuDeces": p.lieu_deces,
+            "generation": t.generation,
+            "fsid": p.fsid,
+            "pere": pere.map(|x| x.nom_affiche()).unwrap_or_default(),
+            "mere": mere.map(|x| x.nom_affiche()).unwrap_or_default(),
+            "manque": manque,
+            "sansIssue": t.sans_issue,
+            "prioritaire": recherche::prioritaire(p),
+            "candidats": candidats,
+            "tentatives": tentatives,
+            "liens": liens,
+        })
+        .to_string())
+    }
+
+    pub fn recherche_saisir(mut self: Pin<&mut Self>, personne: &QString, champs: &QString) -> QString {
+        let c: Value = serde_json::from_str(&champs.to_string()).unwrap_or_default();
+        let t = |k: &str| c[k].as_str().unwrap_or("").trim().to_string();
+        let Some(role) = Role::depuis(&t("role")) else { return resultat(false, "Indiquez s'il s'agit du père ou de la mère.") };
+        let source = Source {
+            organisme: t("organisme"),
+            reference: t("reference"),
+            commune: t("commune"),
+            url: t("url"),
+            consulte_le: recherche::aujourdhui(),
+            extrait: t("extrait"),
+        };
+        let candidat = Candidat {
+            role,
+            prenoms: t("prenoms"),
+            nom: t("nom"),
+            naissance: t("naissance"),
+            lieu_naissance: t("lieuNaissance"),
+            deces: t("deces"),
+            lieu_deces: t("lieuDeces"),
+            provenance: "saisie".into(),
+            sources: vec![source],
+            ..Default::default()
+        };
+        let id = personne.to_string();
+        let Some(mut s) = self.as_mut().rust_mut().recherche.take() else { return resultat(false, "Lancez d'abord une recherche.") };
+        let issue = s.ajouter_candidat(&self.rust().arbre, &id, candidat);
+        if let Ok((cid, _)) = &issue {
+            s.noter(&id, "Saisie d'un acte", &format!("candidat {cid} relevé"));
+        }
+        self.as_mut().rust_mut().recherche = Some(s);
+        match issue {
+            Ok((cid, nouveau)) => {
+                if let Err(e) = self.sauver_recherche() {
+                    return resultat(false, &e);
+                }
+                self.as_mut().signaler_recherche();
+                let texte = if nouveau {
+                    format!("Candidat ajouté ({cid}) : examinez son contrôle de cohérence avant de l'accepter.")
+                } else {
+                    format!("Ce candidat figurait déjà ({cid}) : la nouvelle source lui a été ajoutée.")
+                };
+                resultat(true, &texte)
+            }
+            Err(e) => resultat(false, &e),
+        }
+    }
+
+    pub fn recherche_decider(mut self: Pin<&mut Self>, personne: &QString, candidat: &QString, action: &QString) -> QString {
+        let (id, cid, action) = (personne.to_string(), candidat.to_string(), action.to_string());
+        let Some(mut s) = self.as_mut().rust_mut().recherche.take() else { return resultat(false, "Lancez d'abord une recherche.") };
+        let issue: Result<String, String> = match action.as_str() {
+            "rejeter" => s.rejeter(&id, &cid).map(|()| "Candidat écarté.".to_string()),
+            "attente" => s.reexaminer(&id, &cid).map(|()| "Candidat remis à l'examen.".to_string()),
+            "accepter" => match self.document() {
+                Err(e) => Err(e),
+                Ok(mut doc) => {
+                    let arbre = self.rust().arbre.clone();
+                    match recherche::accepter(&mut doc, &arbre, &mut s, &id, &cid) {
+                        Err(e) => Err(e),
+                        // ecrire() relit le fichier et son suivi depuis le disque : le suivi
+                        // tenu en mémoire est remis juste après.
+                        Ok(pid) => match self.as_mut().ecrire(&doc, None) {
+                            Err(e) => Err(format!("Lien non enregistré :\n\n{e}")),
+                            Ok(()) => {
+                                s.actualiser(&self.rust().arbre);
+                                let nom = self.rust().arbre.personne(&pid).map(|p| p.nom_affiche()).unwrap_or_default();
+                                s.noter(&id, "Validation", &format!("{nom} [{pid}] accepté(e)"));
+                                Ok(format!("Lien écrit dans le fichier : {nom} [{pid}].\n\nUne copie .bak a été faite avant l'écriture."))
+                            }
+                        },
+                    }
+                }
+            },
+            _ => Err("Action inconnue.".into()),
+        };
+        self.as_mut().rust_mut().recherche = Some(s);
+        match issue {
+            Ok(texte) => {
+                if let Err(e) = self.sauver_recherche() {
+                    return resultat(false, &e);
+                }
+                self.as_mut().signaler_recherche();
+                resultat(true, &texte)
+            }
+            Err(e) => resultat(false, &e),
+        }
+    }
+
+    pub fn recherche_sans_issue(mut self: Pin<&mut Self>, personne: &QString, valeur: bool) -> QString {
+        let id = personne.to_string();
+        let Some(mut s) = self.as_mut().rust_mut().recherche.take() else { return resultat(false, "Lancez d'abord une recherche.") };
+        let issue = s.marquer_sans_issue(&id, valeur);
+        if issue.is_ok() {
+            s.noter(&id, "Décision", if valeur { "branche marquée sans issue" } else { "branche rouverte" });
+        }
+        self.as_mut().rust_mut().recherche = Some(s);
+        match issue {
+            Ok(()) => {
+                if let Err(e) = self.sauver_recherche() {
+                    return resultat(false, &e);
+                }
+                self.as_mut().signaler_recherche();
+                resultat(true, "")
+            }
+            Err(e) => resultat(false, &e),
+        }
+    }
+
+    pub fn recherche_familysearch(mut self: Pin<&mut Self>, personne: &QString) {
+        let id = personne.to_string();
+        let Some(jeton) = self.rust().jeton.clone() else {
+            self.as_mut().set_message(q("Connectez-vous d'abord à FamilySearch (menu FamilySearch)."));
+            return;
+        };
+        let fsid = self.rust().arbre.personne(&id).map(|p| p.fsid.clone()).unwrap_or_default();
+        if fsid.is_empty() {
+            self.as_mut().set_message(q("Cette personne n'a pas d'identifiant FamilySearch : utilisez la recherche guidée, puis relevez l'acte trouvé."));
+            return;
+        }
+        if *self.occupe() {
+            self.as_mut().set_message(q("Un échange avec FamilySearch est déjà en cours."));
+            return;
+        }
+        let env = self.rust().env;
+        self.as_mut().set_occupe(true);
+        self.as_mut().set_message(q(&format!("Recherche des parents de {fsid} dans l'arbre FamilySearch…")));
+        let fil = self.qt_thread();
+        std::thread::spawn(move || {
+            let issue = fs::ascendance(env, &jeton, &fsid, 1);
+            let _ = fil.queue(move |mut o: Pin<&mut qobject::Genealogie>| {
+                o.as_mut().set_occupe(false);
+                let liste = match issue {
+                    Ok(l) => l,
+                    Err(e) => {
+                        o.as_mut().set_message(q(&e));
+                        return;
+                    }
+                };
+                let Some(mut s) = o.as_mut().rust_mut().recherche.take() else { return };
+                let arbre = o.rust().arbre.clone();
+                let manque = arbre.personne(&id).map(|p| recherche::manquants(&arbre, p)).unwrap_or_default();
+                let mut nouveaux = 0;
+                for c in recherche::candidats_familysearch(&liste).into_iter().filter(|c| manque.contains(&c.role)) {
+                    if let Ok((_, true)) = s.ajouter_candidat(&arbre, &id, c) {
+                        nouveaux += 1;
+                    }
+                }
+                let texte = if nouveaux == 0 {
+                    "FamilySearch ne propose aucun nouveau parent pour cette personne.".to_string()
+                } else {
+                    format!("{nouveaux} candidat(s) proposé(s) par l'arbre FamilySearch : à confirmer par un acte avant de les accepter.")
+                };
+                s.noter(&id, "FamilySearch — arbre familial", &texte);
+                o.as_mut().rust_mut().recherche = Some(s);
+                let texte = match o.sauver_recherche() {
+                    Ok(()) => texte,
+                    Err(e) => e,
+                };
+                o.as_mut().set_message(q(&texte));
+                o.as_mut().signaler_recherche();
             });
         });
     }
