@@ -111,7 +111,14 @@ ApplicationWindow {
         const p = JSON.parse(gen.pedigree(l[0].id, 3, 3, 0.85))
         if (!p.cartes || p.cartes.length === 0)
             return "pedigree vide"
+        const r = JSON.parse(gen.recherche())
+        if (r.active === undefined)
+            return "recherche illisible"
+        fenetreRecherche.rafraichir()
+        if (r.active && fenetreRecherche.choisi !== "" && fenetreRecherche.travail.personne === undefined)
+            return "recherche : travail illisible"
         return "ok " + l.length + " personnes, " + p.cartes.length + " cartes"
+               + (r.active ? ", recherche : " + r.travaux.length + " personne(s) suivie(s)" : "")
     }
 
     Connections {
@@ -140,6 +147,7 @@ ApplicationWindow {
         Menu {
             title: "&FamilySearch"
             MenuItem { text: "Connexion et import…"; onTriggered: fenetreFs.montrer() }
+            MenuItem { text: "Recherche d'ascendance…"; onTriggered: if (exigerFichier()) fenetreRecherche.montrer() }
         }
         Menu {
             title: "&Aide"
@@ -180,6 +188,7 @@ ApplicationWindow {
             Bouton { text: "📂 Ouvrir GEDCOM"; onClicked: dialogueOuvrir.open() }
             Bouton { text: "✖ Fermer GEDCOM"; couleur: "#B83A3A"; enabled: gen.fichier !== ""; onClicked: confirmerFermeture.open() }
             Bouton { text: "🌐 FamilySearch"; onClicked: fenetreFs.montrer() }
+            Bouton { text: "🔎 Recherche d'ascendance"; couleur: "#2F7F86"; onClicked: if (exigerFichier()) fenetreRecherche.montrer() }
             Bouton { text: "📜 Ordonnances"; couleur: "#7256A3"; onClicked: if (exigerPersonne()) fenetreOrd.montrer(courant) }
             Bouton { text: "🔢 Ahnentafel"; couleur: "#D8872F"; onClicked: if (exigerFichier()) fenetreRacine.montrer() }
             Bouton { text: "👤 Ajouter / supprimer"; couleur: "#4F8A5B"; onClicked: if (exigerFichier()) fenetreGestion.montrer() }
@@ -343,6 +352,7 @@ ApplicationWindow {
     Ordonnances { id: fenetreOrd; noyau: gen }
     Pedigree { id: fenetrePedigree; noyau: gen; onCentre: (id) => fenetre.selectionner(id) }
     FamilySearch { id: fenetreFs; noyau: gen; personne: fenetre.courant }
+    Recherche { id: fenetreRecherche; noyau: gen; personne: fenetre.courant; onAller: (id) => { fenetre.selectionner(id); fenetre.raise(); fenetre.requestActivate() } }
 
     function dossierInitial() {
         return reglages.dossier !== "" ? reglages.dossier : ""

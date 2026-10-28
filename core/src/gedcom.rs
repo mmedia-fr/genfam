@@ -338,6 +338,35 @@ impl Document {
         Some(fam)
     }
 
+    /// Famille nouvelle réunissant le parent connu (ou les deux) et un enfant, sans
+    /// reprendre une famille existante : un parent déjà marié ailleurs ne doit pas
+    /// recevoir d'office le conjoint de cette autre union. Rend son identifiant.
+    pub fn creer_famille(&mut self, pere: Option<&str>, mere: Option<&str>, enfant: &str) -> String {
+        let f = self.prochain_id_famille();
+        let mut b = vec![format!("0 {f} FAM")];
+        if let Some(p) = pere {
+            b.push(format!("1 HUSB {p}"));
+        }
+        if let Some(m) = mere {
+            b.push(format!("1 WIFE {m}"));
+        }
+        b.push(format!("1 CHIL {enfant}"));
+        let pos = self.position_trlr();
+        self.lignes.splice(pos..pos, b);
+        self.ajouter_reference(enfant, "INDI", "FAMC", &f);
+        for parent in [pere, mere].into_iter().flatten() {
+            self.ajouter_reference(parent, "INDI", "FAMS", &f);
+        }
+        f
+    }
+
+    /// Ajoute des lignes telles quelles en fin d'enregistrement (citations de sources).
+    pub fn ajouter_lignes(&mut self, xref: &str, tag_bloc: &str, lignes: &[String]) -> bool {
+        let Some((_, fin)) = self.bloc(xref, tag_bloc) else { return false };
+        self.lignes.splice(fin..fin, lignes.iter().cloned());
+        true
+    }
+
     /// Supprime une personne, ses renvois, et les familles devenues vides.
     pub fn supprimer_personne(&mut self, pid: &str) {
         let mut sortie = Vec::with_capacity(self.lignes.len());

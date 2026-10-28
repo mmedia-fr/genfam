@@ -2,7 +2,7 @@
 
 Programme de généalogie de bureau : ouverture et modification de fichiers GEDCOM,
 exploration d'une famille, pedigree interactif, numérotation Ahnentafel, ordonnances,
-et import de l'ascendance depuis FamilySearch.
+import de l'ascendance depuis FamilySearch et recherche d'ascendance assistée.
 
 Conçu par **Claude Boisseau** (version Python / Tkinter, `GENFAMILLE.pyw`, V7.6).
 Portage en Rust / Qt 6 et liaison FamilySearch : M-Media. Logiciel libre, sous
@@ -28,6 +28,20 @@ licence GNU GPL v3 ou ultérieure (voir [Licence](#licence)).
   générations) d'une personne. Les ancêtres absents sont créés et reliés, reconnus
   ensuite par leur identifiant FamilySearch (`_FSFTID`, balise également posée par
   Ancestral Quest) ; rien de ce qui existe n'est modifié.
+
+- **Recherche d'ascendance** : à partir d'une personne, liste génération par
+  génération (2 à 20) des ascendants à qui il manque le père ou la mère. Pour chacun,
+  des candidats sont proposés par l'arbre FamilySearch (session ouverte) ou relevés à
+  la main dans un acte (archives, cote, commune, adresse de l'image, extrait) après une
+  recherche guidée (FamilySearch, Geneanet, FranceArchives, ouverts dans le navigateur
+  avec les critères déjà remplis). Chaque candidat reçoit un contrôle de cohérence
+  (âge du parent à la naissance, décès antérieur, nom de famille, commune, source) et
+  l'un des états *proposé*, *à vérifier*, *accepté* ou *rejeté*. Rien n'est écrit dans
+  le GEDCOM sans validation : le parent accepté est créé (ou repris par son identifiant
+  FamilySearch), relié à l'enfant, et ses sources sont citées sur la famille (`SOUR`).
+  Le travail — candidats, sources, tentatives même infructueuses, branches sans
+  issue — est conservé dans `<fichier>.recherche.json` et repris à l'ouverture.
+  D'après le cahier des charges « Projet Appli Généalogie » de Claude Boisseau.
 
 Tout ce que le programme ne comprend pas dans un GEDCOM (sources, médias, balises
 propres à un autre logiciel) est conservé tel quel à l'écriture.
