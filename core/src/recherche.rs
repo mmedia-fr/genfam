@@ -58,6 +58,14 @@ impl Role {
         }
     }
 
+    /// « un père », « une mère ».
+    pub fn avec_article(self) -> &'static str {
+        match self {
+            Self::Pere => "un père",
+            Self::Mere => "une mère",
+        }
+    }
+
     fn sexe(self) -> &'static str {
         match self {
             Self::Pere => "M",
@@ -276,7 +284,7 @@ impl Recherche {
             return Err("Indiquez au moins un prénom ou un nom.".into());
         }
         if !manquants(arbre, enfant).contains(&c.role) {
-            return Err(format!("{} a déjà un(e) {} dans le fichier.", enfant.nom_affiche(), c.role.libelle().to_lowercase()));
+            return Err(format!("{} a déjà {} dans le fichier.", enfant.nom_affiche(), c.role.avec_article()));
         }
         let t = self.travail_mut(personne)?;
         if let Some(d) = t.candidats.iter_mut().find(|x| x.role == c.role && meme_personne(x, &c)) {
@@ -516,7 +524,7 @@ pub fn accepter(doc: &mut Document, arbre: &Arbre, r: &mut Recherche, personne: 
     }
     let (pere, mere) = arbre.pere_mere(enfant);
     if let Some(x) = if c.role == Role::Pere { pere } else { mere } {
-        return Err(format!("{} a déjà un(e) {} dans le fichier : {}.", enfant.nom_affiche(), c.role.libelle().to_lowercase(), x.nom_affiche()));
+        return Err(format!("{} a déjà {} dans le fichier : {}.", enfant.nom_affiche(), c.role.avec_article(), x.nom_affiche()));
     }
 
     let existant = if c.fsid.is_empty() { None } else { arbre.par_fsid(&c.fsid) };
@@ -567,8 +575,8 @@ pub fn accepter(doc: &mut Document, arbre: &Arbre, r: &mut Recherche, personne: 
         }
     }
     lignes.push(format!(
-        "1 NOTE {} de {} validé dans GenFam (recherche d'ascendance) le {}.",
-        c.role.libelle(), enfant.nom_affiche(), aujourdhui()
+        "1 NOTE Filiation ({} de {}) validée dans GenFam (recherche d'ascendance) le {}.",
+        c.role.libelle().to_lowercase(), enfant.nom_affiche(), aujourdhui()
     ));
     doc.ajouter_lignes(&fam, "FAM", &lignes);
 
