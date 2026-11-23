@@ -43,7 +43,8 @@ licence GNU GPL v3 ou ultérieure (voir [Licence](#licence)).
   enfant, et une famille vidée de sens est retirée. Un lien qui ferait d'une personne
   l'ancêtre d'elle-même est refusé.
 - **Pedigree** : ascendants et descendants (0 à 20 générations), zoom, recentrage
-  par clic sur une carte.
+  par clic sur une carte. Un double-clic sur une carte ouvre la fiche à onglets de la
+  personne ; bouton Agrandir / Restaurer.
 - **Ahnentafel** : choix de la personne N° 1 ; un ancêtre en implexe reçoit plusieurs numéros.
 - **Ajouter / supprimer** : nouvelle personne (avec date et lieu de décès dès la
   création) reliée à son père et/ou sa mère, choisis par saisie de leur nom et non plus
@@ -62,8 +63,6 @@ licence GNU GPL v3 ou ultérieure (voir [Licence](#licence)).
   le texte copié sur la page d'une personne (intitulé, statut, date, temple, en
   français ou en anglais) met à jour ses ordonnances ; un tableau collé vaut pour tout
   le fichier. Le registre précédent est copié dans `.ordonnances.json.bak`.
-- **Pedigree** : un double-clic sur une carte ouvre la fiche à onglets de la personne
-  (un simple clic la place toujours au centre) ; bouton Agrandir / Restaurer.
 - **Bulles d'aide** : chaque bouton dit ce qu'il fait au survol de la souris.
 - **FamilySearch** : connexion OAuth 2.0 (le mot de passe se saisit sur le site de
   FamilySearch, jamais dans le programme), puis import de l'ascendance (1 à 8
