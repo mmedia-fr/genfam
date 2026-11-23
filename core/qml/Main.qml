@@ -180,7 +180,7 @@ ApplicationWindow {
         Menu {
             title: "&Ordonnances"
             MenuItem { text: "Ordonnances de la personne sélectionnée…"; onTriggered: if (exigerPersonne()) fenetreOrd.montrer(courant) }
-            MenuItem { text: "Importer un relevé CSV de FamilySearch (tout le fichier)…"; onTriggered: if (exigerFichier()) fenetreOrd.liste.importer() }
+            MenuItem { text: "Importer un relevé CSV de FamilySearch (tout le fichier)…"; onTriggered: if (exigerFichier()) dialogueImportOrd.open() }
             MenuItem { text: "Coller un relevé…"; onTriggered: if (exigerPersonne()) { fenetreOrd.montrer(courant); fenetreOrd.liste.coller() } }
         }
         Menu {
@@ -465,6 +465,17 @@ ApplicationWindow {
         onAccepted: {
             const e = gen.enregistrerSous(selectedFile)
             fenetre.signaler(e === "" ? "Enregistrer sous" : "Erreur GEDCOM", e === "" ? "GEDCOM enregistré sous :\n\n" + gen.cheminCourant() : e)
+        }
+    }
+    FileDialog {
+        id: dialogueImportOrd
+        title: "Importer les ordonnances accomplies (export CSV de FamilySearch)"
+        fileMode: FileDialog.OpenFile
+        nameFilters: ["Relevés CSV (*.csv *.txt *.tsv)", "Tous les fichiers (*)"]
+        currentFolder: fenetre.dossierInitial()
+        onAccepted: {
+            const r = JSON.parse(gen.importerOrdonnances(selectedFile))
+            fenetre.signaler(r.ok ? "Import des ordonnances" : "Import impossible", r.message)
         }
     }
     FileDialog {

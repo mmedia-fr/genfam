@@ -418,3 +418,28 @@ pub fn libelle_numeros(numeros: &HashMap<String, Vec<u64>>, id: &str) -> String 
         .map(|v| v.iter().map(|n| n.to_string()).collect::<Vec<_>>().join(" / "))
         .unwrap_or_default()
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::gedcom::analyser;
+
+    #[test]
+    fn recherche_par_mots_et_tris() {
+        let texte = "0 @I10@ INDI\n1 NAME Éloïse /ÉMERY/\n1 BIRT\n2 DATE 1850\n0 @I2@ INDI\n1 NAME Jean /DUPONT/\n\
+                     0 @I1@ INDI\n1 NAME Zoé /DURAND/\n0 @I9@ INDI\n1 NAME Anne /EVRARD/\n0 TRLR\n";
+        let a = analyser(texte);
+        let vide = HashMap::new();
+        let ids = |v: Vec<&Personne>| v.into_iter().map(|p| p.id.clone()).collect::<Vec<_>>();
+        // Mots dans le désordre, sans accents, années.
+        assert_eq!(ids(a.rechercher("dupont jean", Tri::Alpha, &vide)), vec!["@I2@"]);
+        assert_eq!(ids(a.rechercher("eloise", Tri::Alpha, &vide)), vec!["@I10@"]);
+        assert_eq!(ids(a.rechercher("emery 1850", Tri::Alpha, &vide)), vec!["@I10@"]);
+        assert!(a.rechercher("dupont marie", Tri::Alpha, &vide).is_empty());
+        // Alphabétique sans accents : ÉMERY entre DURAND et EVRARD.
+        assert_eq!(ids(a.rechercher("", Tri::Alpha, &vide)), vec!["@I2@", "@I1@", "@I10@", "@I9@"]);
+        // Numérique : I2 avant I10.
+        assert_eq!(ids(a.rechercher("", Tri::Numerotation, &vide)), vec!["@I1@", "@I2@", "@I9@", "@I10@"]);
+        assert_eq!(plier("Œuvray-Lefèvre"), "oeuvray-lefevre");
+    }
+}

@@ -719,6 +719,51 @@ mod tests {
         std::fs::remove_dir_all(dossier).unwrap();
     }
 
+    /// Arbre de la taille de celui de l'auteur (22 000 personnes) : les opérations
+    /// restent linéaires et ne touchent que les lignes visées.
+    #[test]
+    fn grand_arbre() {
+        let mut t = String::from("0 HEAD\n1 CHAR UTF-8\n");
+        let n = 22_000;
+        for i in 1..=n {
+            t += &format!("0 @I{i}@ INDI\n1 NAME Prénom{i} /NOM{}/\n1 SEX {}\n1 BIRT\n2 DATE {}\n", i % 500, if i % 2 == 0 { "F" } else { "M" }, 1700 + i % 300);
+        }
+        // Couples (2k+1, 2k+2), chacun parent des deux personnes suivantes.
+        let mut f = 0;
+        for k in (1..n - 4).step_by(4) {
+            f += 1;
+            t += &format!("0 @F{f}@ FAM\n1 HUSB @I{k}@\n1 WIFE @I{}@\n1 CHIL @I{}@\n1 CHIL @I{}@\n", k + 1, k + 2, k + 3);
+        }
+        t += "0 TRLR\n";
+        let mut d = Document::depuis_texte(&t);
+        let lignes = d.lignes.len();
+        let debut = std::time::Instant::now();
+        let e = creer_personne(&mut d, &identite("Nouveau", "VENU", "M")).unwrap();
+        lier(&mut d, "@I1@", Relation::Enfant, &e, Some("@F1@")).unwrap();
+        definir_parents(&mut d, "@I3@", Some("@I5@"), Some("@I6@")).unwrap();
+        retirer_lien(&mut d, &e, Relation::Parent, "@I2@").unwrap();
+        d.lier_parents("@I21999@", Some("@I1@"), Some("@I2@"));
+        let duree = debut.elapsed();
+        assert!(duree.as_secs() < 60, "opérations trop lentes : {duree:?}");
+        let a = arbre_de(&d);
+        assert_eq!(a.personnes.len(), n + 1);
+        // Les fiches qui n'ont pas été touchées sont restées à l'identique.
+        let fiche = |doc: &Document, id: &str| {
+            let (x, y) = doc.bloc(id, "INDI").unwrap();
+            doc.lignes[x..y].to_vec()
+        };
+        let origine = Document::depuis_texte(&t);
+        for id in ["@I7@", "@I4@", "@I10000@", "@I21998@"] {
+            assert_eq!(fiche(&d, id), fiche(&origine, id), "{id} modifiée");
+        }
+        assert!(d.lignes.len() > lignes);
+        assert_eq!(couple(famille_origine(&a, a.personne(&e).unwrap())), (Some("@I1@"), None));
+        assert_eq!(couple(famille_origine(&a, a.personne("@I3@").unwrap())), (Some("@I5@"), Some("@I6@")));
+        assert_eq!(couple(famille_origine(&a, a.personne("@I21999@").unwrap())), (Some("@I1@"), Some("@I2@")));
+        let c = a.personnes.iter().filter(|p| crate::modele::correspond(p, &crate::modele::mots_requete("prenom2199 nom199"))).count();
+        assert_eq!(c, 1);
+    }
+
     #[test]
     fn unions_d_une_personne() {
         let a = arbre_de(&Document::depuis_texte(EXEMPLE));

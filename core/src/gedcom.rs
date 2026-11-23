@@ -648,7 +648,7 @@ impl Identite {
 
 /// Niveau d'une ligne GEDCOM, lu sur son premier mot.
 fn niveau_de(l: &str) -> Option<u32> {
-    l.trim_start().split_whitespace().next()?.parse().ok()
+    l.split_whitespace().next()?.parse().ok()
 }
 
 fn valeur_de(l: &str) -> String {
