@@ -72,7 +72,11 @@ fn fiche(arbre: &Arbre, p: &Personne, ordonnances: &[Ordonnance]) -> (String, St
     let mut t = String::new();
     let dates: Vec<&str> = [p.naissance.as_str(), p.deces.as_str()].into_iter().filter(|d| !d.is_empty()).collect();
     let ligne_dates = if dates.is_empty() { "Dates non renseignées".to_string() } else { dates.join(" — ") };
-    h += &format!("<h1>{}</h1><p class=\"sous\">{}</p>", echapper(&p.nom_affiche()), echapper(&ligne_dates));
+    h += &format!(
+        "<h1>{}</h1><p class=\"sous\">{} &nbsp; <a href=\"action:identite\">✏ Modifier la fiche</a></p>",
+        echapper(&p.nom_affiche()),
+        echapper(&ligne_dates)
+    );
     t += &format!("{}\n{}\n\n", p.nom_affiche(), ligne_dates);
 
     let section = |titre: &str, champs: &[(&str, String)], h: &mut String, t: &mut String| {
@@ -114,7 +118,9 @@ fn fiche(arbre: &Arbre, p: &Personne, ordonnances: &[Ordonnance]) -> (String, St
         ("ENFANTS", arbre.enfants(p), "Aucun enfant renseigné"),
         ("FRATRIE", arbre.fratrie(p), "Fratrie non renseignée"),
     ] {
-        h += &format!("<h2>{titre}</h2>");
+        // Le lien « Actions » ouvre la fiche à onglets sur la famille (ajouter, associer, retirer).
+        let actions = if titre == "FRATRIE" { "" } else { " &nbsp; <a href=\"action:famille\">✎ Actions…</a>" };
+        h += &format!("<h2>{titre}{actions}</h2>");
         t += &format!("{titre}\n");
         if gens.is_empty() {
             h += &format!("<p class=\"vide\">{vide}</p>");
@@ -214,6 +220,9 @@ mod tests {
         let a = analyser(include_str!("../tests/donnees/exemple.ged"));
         let (h, t) = rendre(&a, "@I1@", Vue::Fiche, &[]);
         assert!(h.contains("<a href=\"@I2@\">Jacques MARTIN</a>"));
+        assert!(h.contains("<h2>ENFANTS &nbsp; <a href=\"action:famille\">"));
+        // Les liens d'action ne vont pas dans l'export texte.
+        assert!(!t.contains("Actions") && !t.contains("action:"));
         assert!(t.contains("Prénoms           Paul"));
         assert!(t.contains("FamilySearch      LZ1A-B2C"));
         let (_, t) = rendre(&a, "@I1@", Vue::Ascendants, &[]);

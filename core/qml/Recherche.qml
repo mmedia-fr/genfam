@@ -144,6 +144,7 @@ Window {
                 SpinBox { id: generations; from: 2; to: 20; value: 10 }
                 Bouton {
                     text: w.etat.active && w.etat.depart === w.personne ? "Actualiser" : "Lancer depuis la personne sélectionnée"
+                    aide: "Lister les ascendants à qui il manque le père ou la mère, jusqu'à la génération choisie"
                     enabled: w.personne !== ""
                     onClicked: {
                         if (w.etat.active && w.etat.depart !== w.personne)
@@ -280,6 +281,7 @@ Window {
                             RowLayout {
                                 Bouton {
                                     text: "🌐 Interroger l'arbre FamilySearch"
+                                    aide: "Demander à l'arbre FamilySearch les parents de cette personne (à confirmer ensuite par un acte)"
                                     enabled: w.noyau && w.noyau.connecte && !w.noyau.occupe && (w.travail.fsid || "") !== ""
                                              && (w.travail.manque || []).length > 0
                                     onClicked: w.noyau.rechercheFamilySearch(w.choisi)
@@ -306,6 +308,7 @@ Window {
                                     delegate: Bouton {
                                         required property var modelData
                                         text: modelData.libelle
+                                        aide: "Ouvrir cette recherche dans le navigateur, critères déjà remplis"
                                         couleur: "#D9E4ED"
                                         couleurTexte: "#234E70"
                                         onClicked: Qt.openUrlExternally(modelData.url)
@@ -393,15 +396,17 @@ Window {
                                             visible: carte.modelData.ouvert
                                             Bouton {
                                                 text: "✔ Accepter"
+                                                aide: "Écrire ce parent dans le fichier GEDCOM, avec ses sources (une copie .bak est faite avant)"
                                                 couleur: "#4F8A5B"
                                                 enabled: carte.modelData.placeLibre
                                                 onClicked: confirmer.demander(carte.modelData)
                                             }
-                                            Bouton { text: "✖ Rejeter"; couleur: "#B83A3A"; onClicked: w.decider(carte.modelData.id, "rejeter") }
+                                            Bouton { text: "✖ Rejeter"; couleur: "#B83A3A"; aide: "Écarter ce candidat (il reste noté dans le suivi)"; onClicked: w.decider(carte.modelData.id, "rejeter") }
                                         }
                                         Bouton {
                                             visible: carte.modelData.etat === "rejete"
                                             text: "Réexaminer"
+                                            aide: "Remettre ce candidat écarté à l'examen"
                                             couleur: "#D9E4ED"
                                             couleurTexte: "#234E70"
                                             onClicked: w.decider(carte.modelData.id, "attente")
@@ -455,7 +460,7 @@ Window {
                             Label { text: "Extrait :" }
                             TextField { id: extrait; Layout.columnSpan: 3; Layout.fillWidth: true; placeholderText: "ex. fils de Louis MARTIN, cultivateur, et de Jeanne BLANC" }
                             Item { Layout.columnSpan: 3; Layout.fillWidth: true }
-                            Bouton { text: "➕ Ajouter le candidat"; couleur: "#4F8A5B"; onClicked: w.saisir() }
+                            Bouton { text: "➕ Ajouter le candidat"; couleur: "#4F8A5B"; aide: "Noter le parent relevé dans l'acte, avec sa source"; onClicked: w.saisir() }
                         }
                     }
 
@@ -463,11 +468,12 @@ Window {
                         Layout.leftMargin: 10
                         Bouton {
                             text: w.travail.sansIssue ? "Rouvrir cette branche" : "Marquer sans issue (aucune source pour l'instant)"
+                            aide: "Noter que cette branche ne mène à rien pour l'instant, ou la rouvrir"
                             couleur: "#D9E4ED"
                             couleurTexte: "#234E70"
                             onClicked: w.signaler(JSON.parse(w.noyau.rechercheSansIssue(w.choisi, !w.travail.sansIssue)).message)
                         }
-                        Bouton { text: "Aller à la fiche"; couleur: "#D9E4ED"; couleurTexte: "#234E70"; onClicked: w.aller(w.choisi) }
+                        Bouton { text: "Aller à la fiche"; couleur: "#D9E4ED"; couleurTexte: "#234E70"; aide: "Sélectionner cette personne dans la fenêtre principale"; onClicked: w.aller(w.choisi) }
                     }
 
                     GroupBox {
@@ -507,7 +513,7 @@ Window {
                 color: "#173A54"
                 text: w.noyau ? w.noyau.message : ""
             }
-            Bouton { text: "Fermer"; couleur: "#D9E4ED"; couleurTexte: "#234E70"; onClicked: w.close() }
+            Bouton { text: "Fermer"; couleur: "#D9E4ED"; couleurTexte: "#234E70"; aide: "Fermer cette fenêtre (le travail est conservé)"; onClicked: w.close() }
         }
     }
 

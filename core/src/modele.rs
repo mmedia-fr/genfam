@@ -331,35 +331,81 @@ impl Arbre {
         chemin.remove(&p.id);
     }
 
-    /// Recherche (nom, identifiant, lieux de naissance et de décès) et tri.
+    /// Recherche (nom, identifiant, lieux de naissance et de décès, années) et tri.
+    ///
+    /// Chaque mot de la requête doit figurer quelque part, sans tenir compte des
+    /// accents ni des majuscules : « dupont jean » trouve « Jean DUPONT », « eloise »
+    /// trouve « Éloïse ».
     pub fn rechercher(&self, requete: &str, tri: Tri, numeros: &HashMap<String, Vec<u64>>) -> Vec<&Personne> {
-        let q = requete.trim().to_lowercase();
-        let mut r: Vec<&Personne> = self
-            .personnes
-            .iter()
-            .filter(|p| {
-                q.is_empty()
-                    || p.nom_affiche().to_lowercase().contains(&q)
-                    || p.nom_gedcom.to_lowercase().contains(&q)
-                    || p.id.to_lowercase().contains(&q)
-                    || p.lieu_naissance.to_lowercase().contains(&q)
-                    || p.lieu_deces.to_lowercase().contains(&q)
-            })
-            .collect();
+        let mots = mots_requete(requete);
+        let mut r: Vec<&Personne> = self.personnes.iter().filter(|p| correspond(p, &mots)).collect();
         match tri {
-            Tri::Alpha => r.sort_by_key(|p| p.nom_liste().to_lowercase()),
-            Tri::Numerotation => r.sort_by_key(|p| cle_numerique(&p.id)),
-            Tri::Ahnentafel => r.sort_by_key(|p| {
+            Tri::Alpha => r.sort_by_cached_key(|p| (plier(&p.nom_liste()), cle_numerique(&p.id))),
+            Tri::Numerotation => r.sort_by_cached_key(|p| cle_numerique(&p.id)),
+            Tri::Ahnentafel => r.sort_by_cached_key(|p| {
                 let n = numeros.get(&p.id).and_then(|v| v.first()).copied().unwrap_or(u64::MAX);
-                (n, p.nom_liste().to_lowercase())
+                (n, plier(&p.nom_liste()), cle_numerique(&p.id))
             }),
         }
         r
     }
 }
 
-/// Clé de tri d'un identifiant GEDCOM : son nombre final, puis le texte.
-fn cle_numerique(id: &str) -> (u64, String) {
+/// Mots d'une requête, pliés (minuscules sans accents).
+pub fn mots_requete(requete: &str) -> Vec<String> {
+    plier(requete).split_whitespace().map(str::to_string).collect()
+}
+
+/// Vrai si chaque mot figure dans le nom, l'identifiant, les lieux ou les dates.
+pub fn correspond(p: &Personne, mots: &[String]) -> bool {
+    if mots.is_empty() {
+        return true;
+    }
+    let botte = plier(&format!(
+        "{} {} {} {} {} {} {}",
+        p.nom_affiche(), p.nom_gedcom, p.id, p.lieu_naissance, p.lieu_deces, p.naissance, p.deces
+    ));
+    mots.iter().all(|m| botte.contains(m.as_str()))
+}
+
+/// Minuscules sans accents : clé de recherche et de tri alphabétique (« Élise » se
+/// range avec les E, « Œuvray » avec les O).
+pub fn plier(t: &str) -> String {
+    let mut r = String::with_capacity(t.len());
+    for c in t.chars().flat_map(char::to_lowercase) {
+        match c {
+            'à' | 'â' | 'ä' | 'á' | 'ã' | 'å' => r.push('a'),
+            'ç' => r.push('c'),
+            'é' | 'è' | 'ê' | 'ë' => r.push('e'),
+            'î' | 'ï' | 'í' | 'ì' => r.push('i'),
+            'ô' | 'ö' | 'ó' | 'ò' | 'õ' => r.push('o'),
+            'ù' | 'û' | 'ü' | 'ú' => r.push('u'),
+            'ÿ' | 'ý' => r.push('y'),
+            'ñ' => r.push('n'),
+            'œ' => r.push_str("oe"),
+            'æ' => r.push_str("ae"),
+            'ß' => r.push_str("ss"),
+            c => r.push(c),
+        }
+    }
+    r
+}
+
+/// Dates abrégées d'une personne, pour distinguer des homonymes : « ° 1850 † 1920 ».
+pub fn dates_courtes(p: &Personne) -> String {
+    let mut d = Vec::new();
+    if !p.naissance.trim().is_empty() {
+        d.push(format!("° {}", p.naissance.trim()));
+    }
+    if !p.deces.trim().is_empty() {
+        d.push(format!("† {}", p.deces.trim()));
+    }
+    d.join("  ")
+}
+
+/// Clé de tri d'un identifiant GEDCOM : son nombre final, puis le texte
+/// (I2 avant I10, et non l'inverse comme dans un tri alphabétique).
+pub fn cle_numerique(id: &str) -> (u64, String) {
     let coeur = id.trim_matches('@');
     let debut = coeur.len() - coeur.chars().rev().take_while(|c| c.is_ascii_digit()).count();
     (coeur[debut..].parse().unwrap_or(u64::MAX), id.to_lowercase())

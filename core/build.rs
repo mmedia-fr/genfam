@@ -15,6 +15,11 @@ fn main() {
         "qml/FamilySearch.qml",
         "qml/Recherche.qml",
         "qml/Bouton.qml",
+        "qml/ChoixPersonne.qml",
+        "qml/FormulaireIdentite.qml",
+        "qml/FichePersonne.qml",
+        "qml/LienProche.qml",
+        "qml/ListeOrdonnances.qml",
     ]))
     .qt_module("Qml")
     .files(["src/pont.rs"])

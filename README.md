@@ -4,7 +4,8 @@ Programme de généalogie de bureau : ouverture et modification de fichiers GEDC
 exploration d'une famille, pedigree interactif, numérotation Ahnentafel, ordonnances,
 import de l'ascendance depuis FamilySearch et recherche d'ascendance assistée.
 
-Conçu par **Claude Boisseau** (version Python / Tkinter, `GENFAMILLE.pyw`, V7.6).
+Conçu par **Claude Boisseau** (version Python / Tkinter, `GENFAMILLE.pyw`, V7.6 ; la 8.2
+reprend des fonctions de sa version 9.8).
 Portage en Rust / Qt 6 et liaison FamilySearch : M-Media. Logiciel libre, sous
 licence GNU GPL v3 ou ultérieure (voir [Licence](#licence)).
 
@@ -12,17 +13,58 @@ licence GNU GPL v3 ou ultérieure (voir [Licence](#licence)).
 
 - **Fichier** : nouveau GEDCOM, ouvrir, enregistrer sous, fermer. Un fichier `.ged`
   passé en argument (double-clic dans l'explorateur) est ouvert directement.
-- **Liste des personnes** : recherche (nom, identifiant, lieux), tri alphabétique,
-  par numéro GEDCOM ou par numéro Ahnentafel.
+- **Liste des personnes** : recherche (nom, identifiant, lieux, années), tri alphabétique,
+  par numéro GEDCOM ou par numéro Ahnentafel. Chaque mot tapé doit figurer, dans
+  n'importe quel ordre et sans tenir compte des accents : « dupont jean » trouve
+  « Jean DUPONT », « eloise » trouve « Éloïse ». Le tri alphabétique ignore les accents
+  (« Élise » se range avec les E), le tri par identifiant est numérique (I2 avant I10).
+  Un clic sur l'en-tête d'une colonne (N°, ID, Nom) trie la liste par cette colonne ;
+  un second clic inverse l'ordre.
 - **Informations** : fiche complète (les proches sont des liens cliquables), famille,
-  ascendants et descendants par génération, export texte.
+  ascendants et descendants par génération, export texte. Les liens « ✏ Modifier la
+  fiche » et « ✎ Actions… » de la fiche ouvrent la fiche à onglets.
+- **Fiche de la personne** (bouton « ✏ Fiche et liens », double-clic sur une carte du
+  pedigree) : fenêtre à trois onglets, *Identité et événements*, *Famille* et
+  *Ordonnances*, avec un bouton Agrandir / Restaurer et un retour à la fiche
+  précédente. L'onglet Identité modifie prénoms, nom, sexe, date et lieu de naissance,
+  date et lieu de décès : seules ces lignes sont réécrites dans le GEDCOM, le reste de
+  la fiche (sources, notes, balises d'autres logiciels) reste en place.
+- **Liens familiaux** : sur l'onglet Famille, parents, conjoints et enfants ont chacun
+  un menu « Actions » (aussi au clic droit sur une ligne). On peut **associer** une
+  personne déjà présente — trouvée en tapant quelques lettres de son nom, avec ses dates
+  pour distinguer les homonymes — ou en **créer** une nouvelle en tapant directement son
+  nom ; avant la création, les personnes semblables déjà présentes sont signalées, pour
+  ne pas créer de doublon. Pour un enfant, on choisit l'union à laquelle il se rattache
+  quand la personne en a plusieurs ; pour un conjoint, on peut compléter une union qui
+  n'a qu'un parent. « Modifier les parents » remplace ou retire le père et la mère ;
+  « Retirer le lien » défait un lien de filiation ou une union sans supprimer personne.
+  Chaque lien s'écrit des deux côtés (`HUSB`, `WIFE`, `CHIL` dans la famille, `FAMS`,
+  `FAMC` dans la fiche) ; une union existante n'est jamais modifiée pour un seul
+  enfant, et une famille vidée de sens est retirée. Un lien qui ferait d'une personne
+  l'ancêtre d'elle-même est refusé.
 - **Pedigree** : ascendants et descendants (0 à 20 générations), zoom, recentrage
   par clic sur une carte.
 - **Ahnentafel** : choix de la personne N° 1 ; un ancêtre en implexe reçoit plusieurs numéros.
-- **Ajouter / supprimer** : nouvelle personne reliée à son père et/ou sa mère ;
-  suppression avec nettoyage des familles vidées ; annulation de la dernière
-  modification (copie `<fichier>.bak`).
+- **Ajouter / supprimer** : nouvelle personne (avec date et lieu de décès dès la
+  création) reliée à son père et/ou sa mère, choisis par saisie de leur nom et non plus
+  dans une liste déroulante de toutes les personnes ; suppression avec nettoyage des
+  familles vidées. Toute écriture du GEDCOM est précédée d'une copie `<fichier>.bak`,
+  qui sert à annuler la dernière modification.
 - **Ordonnances** : enregistrées dans `<fichier>.ordonnances.json`, à côté du GEDCOM.
+  *Import d'un relevé CSV* (menu Ordonnances, ou bouton de la fenêtre) : le fichier des
+  ordonnances accomplies exporté de FamilySearch met à jour en une fois tout le GEDCOM.
+  Les personnes sont reconnues par leur identifiant FamilySearch (`_FSFTID`), à défaut
+  par leur identifiant GEDCOM, jamais par leur nom ; une ordonnance déjà notée est
+  complétée (un statut ne recule jamais), une date différente de celle déjà notée est
+  signalée sans être écrasée, et les lignes sans personne correspondante sont listées.
+  Deux formes de tableau sont lues : une ligne par ordonnance, ou une colonne par type
+  d'ordonnance ; séparateur virgule, point-virgule ou tabulation. *Coller un relevé* :
+  le texte copié sur la page d'une personne (intitulé, statut, date, temple, en
+  français ou en anglais) met à jour ses ordonnances ; un tableau collé vaut pour tout
+  le fichier. Le registre précédent est copié dans `.ordonnances.json.bak`.
+- **Pedigree** : un double-clic sur une carte ouvre la fiche à onglets de la personne
+  (un simple clic la place toujours au centre) ; bouton Agrandir / Restaurer.
+- **Bulles d'aide** : chaque bouton dit ce qu'il fait au survol de la souris.
 - **FamilySearch** : connexion OAuth 2.0 (le mot de passe se saisit sur le site de
   FamilySearch, jamais dans le programme), puis import de l'ascendance (1 à 8
   générations) d'une personne. Les ancêtres absents sont créés et reliés, reconnus
@@ -69,7 +111,11 @@ QML (`core/qml/`), point d'entrée C++ (`cpp/main.cpp`). Qt 6.4 minimum.
     QT_QPA_PLATFORM=offscreen _build/genfam --smoke core/tests/donnees/exemple.ged
 
 L'intégration continue (`.github/workflows/fabrication.yml`) produit l'installeur
-Windows (Inno Setup, `build/genfam.iss`) et une AppImage Linux.
+Windows (Inno Setup, `build/genfam.iss`) et une AppImage Linux. `GenFam.exe` porte son
+numéro de version Windows (FileVersion, ProductVersion), tiré de `CMakeLists.txt` par
+`build/genfam.rc.in`. Le paquet Windows ne livre que le style Qt Quick utilisé
+(Fusion, et Basic dont il hérite), sans rastériseur OpenGL logiciel, compilateurs de
+shaders ni traductions Qt, que le programme n'utilise pas.
 
 ## Licence
 

@@ -25,6 +25,8 @@ ApplicationWindow {
     property string courant: ""
     property string vue: "fiche"
     property string tri: "Alpha"
+    /// Ordre inverse, par un second clic sur l'en-tête de la colonne.
+    property bool inverse: false
     property var lignes: []
 
     Genealogie { id: gen }
@@ -40,7 +42,10 @@ ApplicationWindow {
     }
 
     function rafraichir() {
-        lignes = JSON.parse(gen.personnes(recherche.text, tri))
+        const l = JSON.parse(gen.personnes(recherche.text, tri))
+        if (inverse)
+            l.reverse()
+        lignes = l
         if (courant !== "" && gen.nomDe(courant) === "")
             courant = ""
         afficher()
@@ -62,6 +67,22 @@ ApplicationWindow {
                 break
             }
         }
+    }
+
+    /// Tri par l'en-tête d'une colonne : un second clic inverse l'ordre.
+    function trier(t) {
+        if (tri === t)
+            inverse = !inverse
+        else {
+            tri = t
+            inverse = false
+        }
+        choixTri.currentIndex = ["Alpha", "Numérotation", "Ahnentafel"].indexOf(t)
+        rafraichir()
+    }
+
+    function fleche(t) {
+        return tri === t ? (inverse ? " ▼" : " ▲") : ""
     }
 
     function signaler(titre, texte) {
@@ -111,6 +132,18 @@ ApplicationWindow {
         const p = JSON.parse(gen.pedigree(l[0].id, 3, 3, 0.85))
         if (!p.cartes || p.cartes.length === 0)
             return "pedigree vide"
+        const f = JSON.parse(gen.fichePersonne(l[0].id))
+        if (f.id !== l[0].id || f.parents === undefined)
+            return "fiche illisible"
+        const c = JSON.parse(gen.chercherPersonnes(f.nomAffiche, 10))
+        if (c.total < 1)
+            return "recherche par saisie vide"
+        fenetreFiche.personne = l[0].id
+        fenetreFiche.charger(true)
+        fenetreFiche.lien.preparer(f, "enfant", "associer")
+        fenetreFiche.lien.preparer(f, "conjoint", "creer")
+        if (JSON.parse(gen.ordonnances(l[0].id)).length === undefined)
+            return "ordonnances illisibles"
         const r = JSON.parse(gen.recherche())
         if (r.active === undefined)
             return "recherche illisible"
@@ -143,6 +176,12 @@ ApplicationWindow {
             MenuItem { text: "Fermer GEDCOM"; enabled: gen.fichier !== ""; onTriggered: confirmerFermeture.open() }
             MenuSeparator {}
             MenuItem { text: "Quitter"; onTriggered: confirmerQuitter.open() }
+        }
+        Menu {
+            title: "&Ordonnances"
+            MenuItem { text: "Ordonnances de la personne sélectionnée…"; onTriggered: if (exigerPersonne()) fenetreOrd.montrer(courant) }
+            MenuItem { text: "Importer un relevé CSV de FamilySearch (tout le fichier)…"; onTriggered: if (exigerFichier()) fenetreOrd.liste.importer() }
+            MenuItem { text: "Coller un relevé…"; onTriggered: if (exigerPersonne()) { fenetreOrd.montrer(courant); fenetreOrd.liste.coller() } }
         }
         Menu {
             title: "&FamilySearch"
@@ -184,16 +223,16 @@ ApplicationWindow {
             Layout.leftMargin: 8
             Layout.rightMargin: 8
             spacing: 6
-            Bouton { text: "📄 Nouveau GEDCOM"; couleur: "#4F8A5B"; onClicked: dialogueNouveau.open() }
-            Bouton { text: "📂 Ouvrir GEDCOM"; onClicked: dialogueOuvrir.open() }
-            Bouton { text: "✖ Fermer GEDCOM"; couleur: "#B83A3A"; enabled: gen.fichier !== ""; onClicked: confirmerFermeture.open() }
-            Bouton { text: "🌐 FamilySearch"; onClicked: fenetreFs.montrer() }
-            Bouton { text: "🔎 Recherche d'ascendance"; couleur: "#2F7F86"; onClicked: if (exigerFichier()) fenetreRecherche.montrer() }
-            Bouton { text: "📜 Ordonnances"; couleur: "#7256A3"; onClicked: if (exigerPersonne()) fenetreOrd.montrer(courant) }
-            Bouton { text: "🔢 Ahnentafel"; couleur: "#D8872F"; onClicked: if (exigerFichier()) fenetreRacine.montrer() }
-            Bouton { text: "👤 Ajouter / supprimer"; couleur: "#4F8A5B"; onClicked: if (exigerFichier()) fenetreGestion.montrer() }
-            Bouton { text: "💾 Exporter"; couleur: "#D9E4ED"; couleurTexte: "#234E70"; onClicked: if (exigerPersonne()) dialogueExport.open() }
-            Bouton { text: "⏻ Fermer le programme"; couleur: "#B83A3A"; onClicked: confirmerQuitter.open() }
+            Bouton { text: "📄 Nouveau GEDCOM"; couleur: "#4F8A5B"; aide: "Créer un fichier GEDCOM vide"; onClicked: dialogueNouveau.open() }
+            Bouton { text: "📂 Ouvrir GEDCOM"; aide: "Ouvrir un fichier GEDCOM existant (.ged)"; onClicked: dialogueOuvrir.open() }
+            Bouton { text: "✖ Fermer GEDCOM"; couleur: "#B83A3A"; enabled: gen.fichier !== ""; aide: "Fermer le fichier ouvert"; onClicked: confirmerFermeture.open() }
+            Bouton { text: "🌐 FamilySearch"; aide: "Se connecter à FamilySearch et importer l'ascendance d'une personne"; onClicked: fenetreFs.montrer() }
+            Bouton { text: "🔎 Recherche d'ascendance"; couleur: "#2F7F86"; aide: "Chercher les parents manquants de l'ascendance, génération par génération"; onClicked: if (exigerFichier()) fenetreRecherche.montrer() }
+            Bouton { text: "📜 Ordonnances"; couleur: "#7256A3"; aide: "Ordonnances de la personne sélectionnée, import des relevés FamilySearch"; onClicked: if (exigerPersonne()) fenetreOrd.montrer(courant) }
+            Bouton { text: "🔢 Ahnentafel"; couleur: "#D8872F"; aide: "Choisir la personne N° 1 de la numérotation Ahnentafel"; onClicked: if (exigerFichier()) fenetreRacine.montrer() }
+            Bouton { text: "👤 Ajouter / supprimer"; couleur: "#4F8A5B"; aide: "Ajouter une personne, supprimer une personne, annuler la dernière modification"; onClicked: if (exigerFichier()) fenetreGestion.montrer() }
+            Bouton { text: "💾 Exporter"; couleur: "#D9E4ED"; couleurTexte: "#234E70"; aide: "Enregistrer la présentation affichée dans un fichier texte"; onClicked: if (exigerPersonne()) dialogueExport.open() }
+            Bouton { text: "⏻ Fermer le programme"; couleur: "#B83A3A"; aide: "Quitter GenFam"; onClicked: confirmerQuitter.open() }
         }
         Frame {
             Layout.fillWidth: true
@@ -208,13 +247,13 @@ ApplicationWindow {
                     placeholderText: "Nom, identifiant ou lieu"
                     onAccepted: fenetre.rafraichir()
                 }
-                Bouton { text: "🔎 Rechercher"; onClicked: fenetre.rafraichir() }
-                Bouton { text: "Effacer"; couleur: "#D9E4ED"; couleurTexte: "#234E70"; onClicked: { recherche.text = ""; fenetre.rafraichir() } }
+                Bouton { text: "🔎 Rechercher"; aide: "Chaque mot doit figurer (nom, prénom, identifiant, lieu ou année), sans tenir compte des accents"; onClicked: fenetre.rafraichir() }
+                Bouton { text: "Effacer"; couleur: "#D9E4ED"; couleurTexte: "#234E70"; aide: "Effacer la recherche et revoir toutes les personnes"; onClicked: { recherche.text = ""; fenetre.rafraichir() } }
                 Label { text: "  Trier par :"; font.bold: true }
                 ComboBox {
                     id: choixTri
                     model: ["Alpha", "Numérotation", "Ahnentafel"]
-                    onActivated: { fenetre.tri = currentText; fenetre.rafraichir() }
+                    onActivated: { fenetre.tri = currentText; fenetre.inverse = false; fenetre.rafraichir() }
                 }
                 Item { Layout.fillWidth: true }
                 Label { text: gen.fichier !== "" ? gen.fichier : "Aucun fichier chargé"; color: "#425466" }
@@ -241,9 +280,18 @@ ApplicationWindow {
                         anchors.fill: parent
                         anchors.leftMargin: 6
                         spacing: 0
-                        Text { text: "N°"; color: "white"; font.bold: true; Layout.preferredWidth: 70; horizontalAlignment: Text.AlignHCenter }
-                        Text { text: "ID"; color: "white"; font.bold: true; Layout.preferredWidth: 90 }
-                        Text { text: "Nom (" + fenetre.lignes.length + ")"; color: "white"; font.bold: true; Layout.fillWidth: true }
+                        Text {
+                            text: "N°" + fenetre.fleche("Ahnentafel"); color: "white"; font.bold: true; Layout.preferredWidth: 70; horizontalAlignment: Text.AlignHCenter
+                            MouseArea { anchors.fill: parent; cursorShape: Qt.PointingHandCursor; onClicked: fenetre.trier("Ahnentafel") }
+                        }
+                        Text {
+                            text: "ID" + fenetre.fleche("Numérotation"); color: "white"; font.bold: true; Layout.preferredWidth: 90
+                            MouseArea { anchors.fill: parent; cursorShape: Qt.PointingHandCursor; onClicked: fenetre.trier("Numérotation") }
+                        }
+                        Text {
+                            text: "Nom (" + fenetre.lignes.length + ")" + fenetre.fleche("Alpha"); color: "white"; font.bold: true; Layout.fillWidth: true
+                            MouseArea { anchors.fill: parent; cursorShape: Qt.PointingHandCursor; onClicked: fenetre.trier("Alpha") }
+                        }
                     }
                 }
                 ListView {
@@ -307,7 +355,12 @@ ApplicationWindow {
                     topPadding: 14
                     font.pixelSize: 13
                     background: null
-                    onLinkActivated: (lien) => fenetre.selectionner(lien)
+                    onLinkActivated: (lien) => {
+                        if (lien.startsWith("action:"))
+                            fenetreFiche.montrer(fenetre.courant, lien.substring(7))
+                        else
+                            fenetre.selectionner(lien)
+                    }
                     HoverHandler { cursorShape: info.hoveredLink !== "" ? Qt.PointingHandCursor : Qt.IBeamCursor }
                 }
             }
@@ -315,13 +368,14 @@ ApplicationWindow {
                 Layout.fillWidth: true
                 Layout.leftMargin: 8
                 spacing: 6
-                Bouton { text: "👤 Fiche complète"; couleur: "#D9E4ED"; couleurTexte: "#234E70"; onClicked: if (exigerPersonne()) { fenetre.vue = "fiche"; fenetre.afficher() } }
-                Bouton { text: "👨‍👩‍👧 Famille"; couleur: "#D9E4ED"; couleurTexte: "#234E70"; onClicked: if (exigerPersonne()) { fenetre.vue = "famille"; fenetre.afficher() } }
-                Bouton { text: "⬆ Ascendants"; couleur: "#D9E4ED"; couleurTexte: "#234E70"; onClicked: if (exigerPersonne()) { fenetre.vue = "ascendants"; fenetre.afficher() } }
-                Bouton { text: "⬇ Descendants"; couleur: "#D9E4ED"; couleurTexte: "#234E70"; onClicked: if (exigerPersonne()) { fenetre.vue = "descendants"; fenetre.afficher() } }
-                Bouton { text: "🌳 Pedigree"; couleur: "#D9E4ED"; couleurTexte: "#234E70"; onClicked: if (exigerPersonne()) fenetrePedigree.montrer(fenetre.courant) }
-                Bouton { text: "📜 Ordonnances"; couleur: "#D9E4ED"; couleurTexte: "#234E70"; onClicked: if (exigerPersonne()) fenetreOrd.montrer(fenetre.courant) }
-                Bouton { text: "🌐 Importer de FamilySearch"; onClicked: if (exigerPersonne()) fenetreFs.montrer() }
+                Bouton { text: "✏ Fiche et liens"; couleur: "#4F8A5B"; aide: "Modifier la personne, ajouter ou retirer parents, conjoints et enfants"; onClicked: if (exigerPersonne()) fenetreFiche.montrer(fenetre.courant, "identite") }
+                Bouton { text: "👤 Fiche complète"; couleur: "#D9E4ED"; couleurTexte: "#234E70"; aide: "Afficher toutes les informations de la personne"; onClicked: if (exigerPersonne()) { fenetre.vue = "fiche"; fenetre.afficher() } }
+                Bouton { text: "👨‍👩‍👧 Famille"; couleur: "#D9E4ED"; couleurTexte: "#234E70"; aide: "Afficher parents, conjoints, enfants et fratrie"; onClicked: if (exigerPersonne()) { fenetre.vue = "famille"; fenetre.afficher() } }
+                Bouton { text: "⬆ Ascendants"; couleur: "#D9E4ED"; couleurTexte: "#234E70"; aide: "Afficher tous les ascendants, par génération"; onClicked: if (exigerPersonne()) { fenetre.vue = "ascendants"; fenetre.afficher() } }
+                Bouton { text: "⬇ Descendants"; couleur: "#D9E4ED"; couleurTexte: "#234E70"; aide: "Afficher tous les descendants, par génération"; onClicked: if (exigerPersonne()) { fenetre.vue = "descendants"; fenetre.afficher() } }
+                Bouton { text: "🌳 Pedigree"; couleur: "#D9E4ED"; couleurTexte: "#234E70"; aide: "Ouvrir le pedigree interactif de la personne"; onClicked: if (exigerPersonne()) fenetrePedigree.montrer(fenetre.courant) }
+                Bouton { text: "📜 Ordonnances"; couleur: "#D9E4ED"; couleurTexte: "#234E70"; aide: "Ordonnances de la personne"; onClicked: if (exigerPersonne()) fenetreOrd.montrer(fenetre.courant) }
+                Bouton { text: "🌐 Importer de FamilySearch"; aide: "Importer l'ascendance de la personne depuis FamilySearch"; onClicked: if (exigerPersonne()) fenetreFs.montrer() }
             }
         }
     }
@@ -350,7 +404,13 @@ ApplicationWindow {
     ChoixRacine { id: fenetreRacine; noyau: gen; onChoisie: (id) => { fenetre.tri = "Ahnentafel"; choixTri.currentIndex = 2; fenetre.rafraichir() } }
     GestionPersonnes { id: fenetreGestion; noyau: gen }
     Ordonnances { id: fenetreOrd; noyau: gen }
-    Pedigree { id: fenetrePedigree; noyau: gen; onCentre: (id) => fenetre.selectionner(id) }
+    Pedigree {
+        id: fenetrePedigree
+        noyau: gen
+        onCentre: (id) => fenetre.selectionner(id)
+        onFiche: (id) => fenetreFiche.montrer(id, "identite")
+    }
+    FichePersonne { id: fenetreFiche; noyau: gen; onAller: (id) => fenetre.selectionner(id) }
     FamilySearch { id: fenetreFs; noyau: gen; personne: fenetre.courant }
     Recherche { id: fenetreRecherche; noyau: gen; personne: fenetre.courant; onAller: (id) => { fenetre.selectionner(id); fenetre.raise(); fenetre.requestActivate() } }
 

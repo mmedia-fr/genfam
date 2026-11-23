@@ -84,10 +84,42 @@ pub mod qobject {
         #[cxx_name = "reinitialiserRacine"]
         fn reinitialiser_racine(self: Pin<&mut Genealogie>);
 
-        /// Personnes proposées comme père ou mère : `[{id, libelle}]`.
+        /// Recherche par saisie, limitée : `{total, liste: [{id, nom, nomAffiche, dates, lieu, sexe}]}`.
+        /// Chaque mot de la requête doit figurer (nom, prénoms, identifiant, lieux, dates).
         #[qinvokable]
-        #[cxx_name = "choixParents"]
-        fn choix_parents(&self) -> QString;
+        #[cxx_name = "chercherPersonnes"]
+        fn chercher_personnes(&self, requete: &QString, limite: i32) -> QString;
+
+        /// Fiche d'une personne, pour l'édition : identité, parents, unions, conjoints, enfants.
+        #[qinvokable]
+        #[cxx_name = "fichePersonne"]
+        fn fiche_personne(&self, id: &QString) -> QString;
+
+        /// Réécrit l'identité (nom, sexe, naissance, décès) ; rend `{ok, message}`.
+        #[qinvokable]
+        #[cxx_name = "modifierPersonne"]
+        fn modifier_personne(self: Pin<&mut Genealogie>, id: &QString, champs: &QString) -> QString;
+
+        /// Relie une personne existante : relation « pere », « mere », « parent »,
+        /// « conjoint » ou « enfant » ; `famille` : union choisie (vide : union nouvelle).
+        #[qinvokable]
+        #[cxx_name = "lierProche"]
+        fn lier_proche(self: Pin<&mut Genealogie>, id: &QString, relation: &QString, autre: &QString, famille: &QString) -> QString;
+
+        /// Crée une personne et la relie dans la même écriture ; rend `{ok, message, id}`.
+        #[qinvokable]
+        #[cxx_name = "creerProche"]
+        fn creer_proche(self: Pin<&mut Genealogie>, id: &QString, relation: &QString, champs: &QString, famille: &QString) -> QString;
+
+        /// Donne à une personne ce père et cette mère (identifiants, vides : aucun).
+        #[qinvokable]
+        #[cxx_name = "definirParents"]
+        fn definir_parents(self: Pin<&mut Genealogie>, id: &QString, pere: &QString, mere: &QString) -> QString;
+
+        /// Retire le lien entre la personne et un proche ; aucune personne n'est supprimée.
+        #[qinvokable]
+        #[cxx_name = "retirerLien"]
+        fn retirer_lien(self: Pin<&mut Genealogie>, id: &QString, relation: &QString, autre: &QString) -> QString;
 
         /// Ajoute une personne ; rend `{ok, message, id}`.
         #[qinvokable]
@@ -117,6 +149,18 @@ pub mod qobject {
         #[qinvokable]
         #[cxx_name = "listesOrdonnances"]
         fn listes_ordonnances(&self) -> QString;
+
+        /// Import d'un relevé CSV d'ordonnances accomplies (export FamilySearch) pour tout
+        /// le fichier ; rend `{ok, message}` avec le bilan.
+        #[qinvokable]
+        #[cxx_name = "importerOrdonnances"]
+        fn importer_ordonnances(self: Pin<&mut Genealogie>, url: &QString) -> QString;
+
+        /// « Coller un relevé » : un tableau collé vaut pour tout le fichier, un relevé en
+        /// texte libre pour la personne `id`.
+        #[qinvokable]
+        #[cxx_name = "collerReleve"]
+        fn coller_releve(self: Pin<&mut Genealogie>, id: &QString, texte: &QString) -> QString;
 
         #[qinvokable]
         #[cxx_name = "pedigree"]
@@ -178,10 +222,11 @@ pub mod qobject {
     impl cxx_qt::Threading for Genealogie {}
 }
 
+use crate::edition::{self, Relation};
 use crate::familysearch::{self as fs, Environnement};
 use crate::fiches::{self, Vue};
-use crate::gedcom::{self, Document};
-use crate::modele::{libelle_numeros, Arbre, Personne, Tri};
+use crate::gedcom::{self, Document, Identite};
+use crate::modele::{cle_numerique, correspond, dates_courtes, libelle_numeros, mots_requete, plier, Arbre, Personne, Tri};
 use crate::ordonnances::{self, Ordonnance, Registre};
 use crate::recherche::{self, Candidat, Recherche, Role, Source};
 use core::pin::Pin;
@@ -269,6 +314,40 @@ fn q(s: &str) -> QString {
 
 fn resultat(ok: bool, message: &str) -> QString {
     q(&json!({"ok": ok, "message": message}).to_string())
+}
+
+fn issue(r: Result<String, String>) -> QString {
+    match r {
+        Ok(m) => resultat(true, &m),
+        Err(e) => resultat(false, &e),
+    }
+}
+
+/// Champs d'identité saisis dans un formulaire (JSON).
+fn identite_depuis(c: &Value) -> Identite {
+    let t = |k: &str| c[k].as_str().unwrap_or("").to_string();
+    Identite {
+        prenoms: t("prenoms"),
+        nom: t("nom"),
+        sexe: t("sexe"),
+        naissance: t("naissance"),
+        lieu_naissance: t("lieuNaissance"),
+        deces: t("deces"),
+        lieu_deces: t("lieuDeces"),
+    }
+}
+
+fn non_vide(s: String) -> Option<String> {
+    let s = s.trim().to_string();
+    if s.is_empty() { None } else { Some(s) }
+}
+
+fn relation_depuis(t: &QString) -> Result<Relation, String> {
+    Relation::depuis(&t.to_string()).ok_or_else(|| "Relation inconnue.".to_string())
+}
+
+fn personne_json(p: &Personne) -> Value {
+    json!({"id": p.id, "nom": p.nom_affiche(), "nomListe": p.nom_liste(), "dates": dates_courtes(p), "sexe": p.sexe})
 }
 
 impl GenealogieRust {
@@ -445,11 +524,164 @@ impl qobject::Genealogie {
         self.apres_changement(Some("Numérotation Ahnentafel réinitialisée".into()));
     }
 
-    pub fn choix_parents(&self) -> QString {
-        let mut v: Vec<&Personne> = self.rust().arbre.personnes.iter().collect();
-        v.sort_by_key(|p| p.nom_affiche().to_lowercase());
-        let l: Vec<Value> = v.iter().map(|p| json!({"id": p.id, "libelle": format!("{} [{}]", p.nom_affiche(), p.id)})).collect();
-        q(&Value::Array(l).to_string())
+    pub fn chercher_personnes(&self, requete: &QString, limite: i32) -> QString {
+        let mots = mots_requete(&requete.to_string());
+        if mots.is_empty() {
+            return q(&json!({"total": 0, "liste": []}).to_string());
+        }
+        let mut v: Vec<&Personne> = self.rust().arbre.personnes.iter().filter(|p| correspond(p, &mots)).collect();
+        let total = v.len();
+        v.sort_by_cached_key(|p| (plier(&p.nom_liste()), cle_numerique(&p.id)));
+        v.truncate(limite.max(1) as usize);
+        let liste: Vec<Value> = v
+            .iter()
+            .map(|p| {
+                let mut j = personne_json(p);
+                j["lieu"] = json!(p.lieu_naissance);
+                j
+            })
+            .collect();
+        q(&json!({"total": total, "liste": liste}).to_string())
+    }
+
+    pub fn fiche_personne(&self, id: &QString) -> QString {
+        let r = self.rust();
+        let a = &r.arbre;
+        let Some(p) = a.personne(&id.to_string()) else { return q("{}") };
+        let ident = Identite::de(p);
+        let mut parents = Vec::new();
+        for f in p.familles_enfant.iter().filter_map(|f| a.famille(f)) {
+            for (x, role) in [(&f.mari, "Père"), (&f.epouse, "Mère")] {
+                if let Some(x) = x.as_deref().and_then(|x| a.personne(x)) {
+                    let mut j = personne_json(x);
+                    j["role"] = json!(role);
+                    j["famille"] = json!(f.id);
+                    parents.push(j);
+                }
+            }
+        }
+        let unions = edition::unions(a, p);
+        let mut conjoints = Vec::new();
+        let mut enfants = Vec::new();
+        let mut liste_unions = Vec::new();
+        for u in &unions {
+            let conjoint = u.conjoint.as_deref().and_then(|c| a.personne(c));
+            let qui = conjoint.map_or_else(|| "sans conjoint".to_string(), |c| format!("avec {}", c.nom_affiche()));
+            liste_unions.push(json!({
+                "famille": u.famille, "conjoint": u.conjoint, "enfants": u.enfants, "mariage": u.mariage,
+                "libelle": format!("{qui} — {} enfant(s) [{}]", u.enfants, u.famille),
+            }));
+            if let Some(c) = conjoint {
+                let mut j = personne_json(c);
+                j["famille"] = json!(u.famille);
+                j["mariage"] = json!(u.mariage);
+                j["enfants"] = json!(u.enfants);
+                conjoints.push(j);
+            }
+            if let Some(f) = a.famille(&u.famille) {
+                for e in f.enfants.iter().filter_map(|e| a.personne(e)) {
+                    let mut j = personne_json(e);
+                    j["famille"] = json!(u.famille);
+                    j["autreParent"] = json!(conjoint.map(|c| c.nom_affiche()).unwrap_or_default());
+                    enfants.push(j);
+                }
+            }
+        }
+        let origine = edition::famille_origine(a, p);
+        let place = |x: Option<&String>| x.and_then(|x| a.personne(x)).map(personne_json).unwrap_or(Value::Null);
+        let fratrie: Vec<Value> = a.fratrie(p).into_iter().map(personne_json).collect();
+        q(&json!({
+            "id": p.id,
+            "nomAffiche": p.nom_affiche(),
+            "dates": dates_courtes(p),
+            "prenoms": ident.prenoms, "nom": ident.nom, "sexe": ident.sexe,
+            "naissance": ident.naissance, "lieuNaissance": ident.lieu_naissance,
+            "deces": ident.deces, "lieuDeces": ident.lieu_deces,
+            "mariage": p.mariage, "lieuMariage": p.lieu_mariage,
+            "fsid": p.fsid,
+            "notes": p.notes,
+            "numero": libelle_numeros(&r.numeros, &p.id),
+            "pere": place(origine.and_then(|f| f.mari.as_ref())),
+            "mere": place(origine.and_then(|f| f.epouse.as_ref())),
+            "parents": parents,
+            "unions": liste_unions,
+            "conjoints": conjoints,
+            "enfants": enfants,
+            "fratrie": fratrie,
+        })
+        .to_string())
+    }
+
+    /// Applique une modification au fichier : rien n'est écrit si elle échoue ou ne
+    /// change rien ; sinon le fichier est réécrit après sa copie `.bak`, puis relu.
+    fn modifier_document(
+        mut self: Pin<&mut Self>,
+        operation: impl FnOnce(&mut Document) -> Result<String, String>,
+    ) -> Result<String, String> {
+        let mut doc = self.document()?;
+        let avant = doc.lignes.clone();
+        let message = operation(&mut doc)?;
+        if doc.lignes != avant {
+            self.as_mut().ecrire(&doc, None).map_err(|e| format!("Modification non enregistrée :\n\n{e}"))?;
+            let r = format!("{} — modification enregistrée (copie .bak faite avant l'écriture)", self.rust().resume_courant());
+            self.as_mut().set_resume(q(&r));
+        }
+        Ok(message)
+    }
+
+    pub fn modifier_personne(self: Pin<&mut Self>, id: &QString, champs: &QString) -> QString {
+        let id = id.to_string();
+        let identite = identite_depuis(&serde_json::from_str(&champs.to_string()).unwrap_or_default());
+        issue(self.modifier_document(|doc| {
+            Ok(if edition::modifier_identite(doc, &id, &identite)? {
+                "Fiche enregistrée.".to_string()
+            } else {
+                "Aucun changement à enregistrer.".to_string()
+            })
+        }))
+    }
+
+    pub fn lier_proche(self: Pin<&mut Self>, id: &QString, relation: &QString, autre: &QString, famille: &QString) -> QString {
+        let relation = match relation_depuis(relation) {
+            Ok(r) => r,
+            Err(e) => return resultat(false, &e),
+        };
+        let (id, autre, famille) = (id.to_string(), autre.to_string(), non_vide(famille.to_string()));
+        issue(self.modifier_document(|doc| edition::lier(doc, &id, relation, &autre, famille.as_deref())))
+    }
+
+    pub fn creer_proche(self: Pin<&mut Self>, id: &QString, relation: &QString, champs: &QString, famille: &QString) -> QString {
+        let relation = match relation_depuis(relation) {
+            Ok(r) => r,
+            Err(e) => return resultat(false, &e),
+        };
+        let (id, famille) = (id.to_string(), non_vide(famille.to_string()));
+        let identite = identite_depuis(&serde_json::from_str(&champs.to_string()).unwrap_or_default());
+        let mut cree = String::new();
+        let r = self.modifier_document(|doc| {
+            let nouveau = edition::creer_personne(doc, &identite)?;
+            let lien = edition::lier(doc, &id, relation, &nouveau, famille.as_deref())?;
+            cree = nouveau.clone();
+            Ok(format!("Personne créée : {} [{nouveau}].\n\n{lien}", identite.nettoyee()?.nom_gedcom().replace('/', "")))
+        });
+        match r {
+            Ok(m) => q(&json!({"ok": true, "message": m, "id": cree}).to_string()),
+            Err(e) => resultat(false, &e),
+        }
+    }
+
+    pub fn definir_parents(self: Pin<&mut Self>, id: &QString, pere: &QString, mere: &QString) -> QString {
+        let (id, pere, mere) = (id.to_string(), non_vide(pere.to_string()), non_vide(mere.to_string()));
+        issue(self.modifier_document(|doc| edition::definir_parents(doc, &id, pere.as_deref(), mere.as_deref())))
+    }
+
+    pub fn retirer_lien(self: Pin<&mut Self>, id: &QString, relation: &QString, autre: &QString) -> QString {
+        let relation = match relation_depuis(relation) {
+            Ok(r) => r,
+            Err(e) => return resultat(false, &e),
+        };
+        let (id, autre) = (id.to_string(), autre.to_string());
+        issue(self.modifier_document(|doc| edition::retirer_lien(doc, &id, relation, &autre)))
     }
 
     /// Réécrit le fichier (avec sauvegarde .bak) puis le relit.
@@ -469,35 +701,23 @@ impl qobject::Genealogie {
         Document::lire(&chemin).map_err(|e| e.to_string())
     }
 
+    /// Nouvelle personne, reliée si on les donne à son père et à sa mère : la famille de
+    /// ce couple exact est reprise si elle existe, sinon une famille nouvelle est créée.
     pub fn ajouter_personne(mut self: Pin<&mut Self>, champs: &QString) -> QString {
         let c: Value = serde_json::from_str(&champs.to_string()).unwrap_or_default();
-        let t = |k: &str| c[k].as_str().unwrap_or("").trim().to_string();
-        let (prenoms, nom) = (t("prenoms"), t("nom"));
-        if prenoms.is_empty() && nom.is_empty() {
-            return resultat(false, "Indiquez au moins un prénom ou un nom.");
-        }
-        let (pere, mere) = (t("pere"), t("mere"));
-        if !pere.is_empty() && pere == mere {
-            return resultat(false, "Le père et la mère doivent être deux personnes différentes.");
-        }
-        let mut doc = match self.document() {
-            Ok(d) => d,
-            Err(e) => return resultat(false, &e),
-        };
-        let id = doc.prochain_id_personne();
-        let mut p = Personne::nouvelle(&id);
-        p.nom_gedcom = if nom.is_empty() { prenoms.clone() } else { format!("{prenoms} /{nom}/").trim().to_string() };
-        p.prenoms = prenoms;
-        p.nom = nom;
-        p.sexe = t("sexe").to_uppercase();
-        p.naissance = t("naissance");
-        p.lieu_naissance = t("lieuNaissance");
-        p.deces = t("deces");
-        p.lieu_deces = t("lieuDeces");
-        let opt = |s: &String| if s.is_empty() { None } else { Some(s.clone()) };
-        let (pere, mere) = (opt(&pere), opt(&mere));
-        doc.ajouter_personne(&p, pere.as_deref(), mere.as_deref());
-        if let Err(e) = self.as_mut().ecrire(&doc, None) {
+        let identite = identite_depuis(&c);
+        let pere = non_vide(c["pere"].as_str().unwrap_or("").to_string());
+        let mere = non_vide(c["mere"].as_str().unwrap_or("").to_string());
+        let mut id = String::new();
+        let r = self.as_mut().modifier_document(|doc| {
+            let nouveau = edition::creer_personne(doc, &identite)?;
+            if pere.is_some() || mere.is_some() {
+                edition::definir_parents(doc, &nouveau, pere.as_deref(), mere.as_deref())?;
+            }
+            id = nouveau;
+            Ok(String::new())
+        });
+        if let Err(e) = r {
             return resultat(false, &format!("Impossible d'ajouter la personne :\n\n{e}"));
         }
         let r = self.rust();
@@ -509,8 +729,9 @@ impl qobject::Genealogie {
             rel.push(format!("Mère : {}", x.nom_affiche()));
         }
         let rel = if rel.is_empty() { "Aucun parent relié".to_string() } else { rel.join("\n") };
+        let nom = r.arbre.personne(&id).map(Personne::nom_affiche).unwrap_or_default();
         q(&json!({"ok": true, "id": id,
-                  "message": format!("Personne ajoutée :\n{}\n\nID : {id}\n\n{rel}", p.nom_affiche())}).to_string())
+                  "message": format!("Personne ajoutée :\n{nom}\n\nID : {id}\n\n{rel}")}).to_string())
     }
 
     pub fn supprimer_personne(mut self: Pin<&mut Self>, id: &QString) -> QString {
@@ -582,6 +803,56 @@ impl qobject::Genealogie {
 
     pub fn listes_ordonnances(&self) -> QString {
         q(&json!({"types": ordonnances::TYPES, "statuts": ordonnances::STATUTS}).to_string())
+    }
+
+    /// Verse un relevé dans le registre et l'enregistre (copie `.bak` du registre avant).
+    fn verser_releve(mut self: Pin<&mut Self>, verser: impl FnOnce(&mut Registre, &Arbre) -> ordonnances::Bilan) -> QString {
+        let Some(chemin) = self.rust().chemin.clone() else { return resultat(false, "Créez ou ouvrez d'abord un fichier GEDCOM.") };
+        let mut registre = self.rust().registre.clone();
+        let bilan = verser(&mut registre, &self.rust().arbre);
+        if bilan.modifie() {
+            if let Err(e) = ordonnances::enregistrer_avec_sauvegarde(&chemin, &registre) {
+                return resultat(false, &format!("Ordonnances non enregistrées :\n\n{e}"));
+            }
+            self.as_mut().rust_mut().registre = registre;
+            let rev = *self.revision() + 1;
+            self.as_mut().set_revision(rev);
+        }
+        let mut texte = bilan.texte();
+        if bilan.modifie() {
+            texte += "\n\nLe registre précédent a été copié dans « .ordonnances.json.bak ».";
+        }
+        resultat(true, &texte)
+    }
+
+    pub fn importer_ordonnances(self: Pin<&mut Self>, url: &QString) -> QString {
+        let chemin = chemin_depuis_url(&url.to_string());
+        let texte = match std::fs::read(&chemin) {
+            Ok(o) => gedcom::decoder(&o),
+            Err(e) => return resultat(false, &format!("Impossible de lire le fichier :\n\n{e}")),
+        };
+        match ordonnances::lire_tableau(&texte) {
+            Ok(lignes) if lignes.is_empty() => resultat(false, "Aucune ordonnance trouvée dans ce fichier."),
+            Ok(lignes) => self.verser_releve(|r, a| ordonnances::appliquer(r, a, &lignes)),
+            Err(e) => resultat(false, &e),
+        }
+    }
+
+    pub fn coller_releve(self: Pin<&mut Self>, id: &QString, texte: &QString) -> QString {
+        let (id, texte) = (id.to_string(), texte.to_string());
+        if let Ok(lignes) = ordonnances::lire_tableau(&texte) {
+            if !lignes.is_empty() {
+                return self.verser_releve(|r, a| ordonnances::appliquer(r, a, &lignes));
+            }
+        }
+        if self.rust().arbre.personne(&id).is_none() {
+            return resultat(false, "Sélectionnez d'abord la personne à qui appartient ce relevé.");
+        }
+        let liste = ordonnances::lire_releve(&texte);
+        if liste.is_empty() {
+            return resultat(false, "Aucune ordonnance reconnue dans le texte collé (Baptême, Confirmation, Initiatoire, Dotation, Scellement…).");
+        }
+        self.verser_releve(|r, _| ordonnances::appliquer_releve(r, &id, liste))
     }
 
     pub fn pedigree(&self, id: &QString, haut: i32, bas: i32, zoom: f64) -> QString {

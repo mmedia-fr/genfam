@@ -66,7 +66,30 @@ jobs:
           test -n "$version"
           mkdir -p dist/GenFam
           cp _build/genfam.exe dist/GenFam/GenFam.exe
-          "$QT_ROOT_DIR/bin/windeployqt.exe" --release --qmldir core/qml dist/GenFam/GenFam.exe
+          # Ni rastériseur OpenGL logiciel ni compilateurs de shaders : Qt Quick passe par
+          # Direct3D 11 avec des shaders précompilés. Pas de traductions Qt : le programme
+          # n'en charge aucune.
+          "$QT_ROOT_DIR/bin/windeployqt.exe" --release --qmldir core/qml --no-translations \
+            --no-opengl-sw --no-system-d3d-compiler --no-system-dxc-compiler dist/GenFam/GenFam.exe
+          avant=$(du -sm dist/GenFam | cut -f1)
+          # Seul le style Fusion est utilisé (main.cpp), avec Basic dont il hérite :
+          # windeployqt livre tous les styles de Qt Quick Controls, les autres sont retirés.
+          for style in Material Imagine Universal FluentWinUI3 Windows; do
+            rm -rf "dist/GenFam/qml/QtQuick/Controls/$style"
+            rm -f dist/GenFam/Qt6QuickControls2${style}*.dll
+          done
+          rm -rf dist/GenFam/qml/QtQuick/NativeStyle
+          test -d dist/GenFam/qml/QtQuick/Controls/Fusion
+          test -d dist/GenFam/qml/QtQuick/Controls/Basic
+          # Aucune bibliothèque restante ne doit dépendre d'un style retiré.
+          find dist/GenFam \( -name '*.dll' -o -name '*.exe' \) -print0 | while IFS= read -r -d '' f; do
+            if dumpbin //nologo //dependents "$(cygpath -w "$f")" | grep -iE 'Qt6QuickControls2(Material|Imagine|Universal|FluentWinUI3|Windows)'; then
+              echo "::error::$f dépend d'un style retiré"
+              exit 1
+            fi
+          done
+          echo "Paquet : ${avant} Mo livrés par windeployqt, $(du -sm dist/GenFam | cut -f1) Mo après le retrait des styles inutilisés"
+          find dist/GenFam -type f -size +1M -exec du -k {} + | sort -rn | head -25 || true
           # Runtime Visual C++ (Qt, main.cpp et le noyau Rust en dépendent) déposé à côté
           # de l'exécutable : l'installation se fait sans élévation, et vc_redist.x64.exe,
           # que windeployqt joint sans le lancer, en exigerait une.
@@ -86,6 +109,11 @@ jobs:
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
+          # Numéro de version Windows de l'exécutable : celui du projet.
+          $v = (Get-Item .\dist\GenFam\GenFam.exe).VersionInfo
+          $attendu = (Select-String -Path CMakeLists.txt -Pattern '^project\(genfam VERSION ([0-9.]+)').Matches[0].Groups[1].Value
+          Write-Host "GenFam.exe : FileVersion $($v.FileVersion), ProductVersion $($v.ProductVersion), attendu $attendu"
+          if ("$($v.FileMajorPart).$($v.FileMinorPart).$($v.FileBuildPart)" -ne $attendu) { throw "FileVersion absente ou fausse : '$($v.FileVersion)'" }
           $nom = Join-Path $PWD ("G" + [char]0xE9 + "n" + [char]0xE9 + "alogie essai.ged")
           Copy-Item core/tests/donnees/exemple.ged $nom
           $env:QT_QPA_PLATFORM = "offscreen"

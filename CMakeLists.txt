@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 # GenFam — noyau Rust (core/), interface Qt 6 / QML. Socle MMEDIA (cf. MMdedit).
 cmake_minimum_required(VERSION 3.24)
-project(genfam VERSION 8.1.0 LANGUAGES CXX)
+project(genfam VERSION 8.2.0 LANGUAGES CXX)
 
 if(CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
   set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreadedDLL")
@@ -41,7 +41,10 @@ cxx_qt_import_qml_module(genfam_qml_module
 
 set(GENFAM_SOURCES cpp/main.cpp)
 if(WIN32)
-  list(APPEND GENFAM_SOURCES build/genfam.rc)
+  # Icône et numéro de version Windows (FileVersion) de GenFam.exe.
+  set(GENFAM_ICONE "${CMAKE_SOURCE_DIR}/assets/genfam.ico")
+  configure_file(build/genfam.rc.in "${CMAKE_BINARY_DIR}/genfam.rc" @ONLY)
+  list(APPEND GENFAM_SOURCES "${CMAKE_BINARY_DIR}/genfam.rc")
   # ureq / rustls s'appuient sur les API réseau et cryptographiques de Windows.
   set(GENFAM_LIBS_SYSTEME ws2_32 userenv bcrypt ntdll advapi32 crypt32 secur32)
 endif()
