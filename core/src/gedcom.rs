@@ -78,6 +78,9 @@ pub fn analyser(texte: &str) -> Arbre {
     let mut courant = Courant::Rien;
     let mut evenement = "";
     let mut tag1 = String::new();
+    // Seul le premier BIRT et le premier DEAT d'une personne comptent : ce sont eux
+    // que la modification d'une fiche réécrit.
+    let (mut naissance_vue, mut deces_vu) = (false, false);
 
     for brute in texte.lines() {
         let Some(l) = analyser_ligne(brute) else { continue };
@@ -85,6 +88,8 @@ pub fn analyser(texte: &str) -> Arbre {
             courant = Courant::Rien;
             evenement = "";
             tag1.clear();
+            naissance_vue = false;
+            deces_vu = false;
             match (l.xref, l.tag) {
                 (Some(x), "INDI") => {
                     personnes.push(Personne::nouvelle(x));
@@ -103,12 +108,22 @@ pub fn analyser(texte: &str) -> Arbre {
                 let p = personnes.last_mut().unwrap();
                 if l.niveau == 1 {
                     tag1 = l.tag.to_string();
-                    evenement = match l.tag { "BIRT" => "BIRT", "DEAT" => "DEAT", _ => "" };
+                    evenement = match l.tag {
+                        "BIRT" if !naissance_vue => {
+                            naissance_vue = true;
+                            "BIRT"
+                        }
+                        "DEAT" if !deces_vu => {
+                            deces_vu = true;
+                            "DEAT"
+                        }
+                        _ => "",
+                    };
                     let v = l.valeur.to_string();
                     match l.tag {
                         // Seul le premier nom compte : les suivants sont des variantes.
                         "NAME" if p.nom_gedcom.is_empty() => p.nom_gedcom = v,
-                        "SEX" => p.sexe = v,
+                        "SEX" if p.sexe.is_empty() => p.sexe = v,
                         "FAMS" if !v.is_empty() => p.familles_conjoint.push(v),
                         "FAMC" if !v.is_empty() => p.familles_enfant.push(v),
                         "NOTE" if !v.is_empty() => p.notes.push(v),
@@ -188,9 +203,11 @@ impl Document {
     }
 
     /// Bornes [début, fin) de l'enregistrement de niveau 0 portant cet identifiant.
-    fn bloc(&self, xref: &str, tag: &str) -> Option<(usize, usize)> {
+    pub fn bloc(&self, xref: &str, tag: &str) -> Option<(usize, usize)> {
         let debut = self.lignes.iter().position(|l| {
-            matches!(analyser_ligne(l), Some(Ligne { niveau: 0, xref: Some(x), tag: t, .. }) if x == xref && t == tag)
+            l.starts_with('0')
+                && l.contains(xref)
+                && matches!(analyser_ligne(l), Some(Ligne { niveau: 0, xref: Some(x), tag: t, .. }) if x == xref && t == tag)
         })?;
         let fin = self.lignes[debut + 1..]
             .iter()
@@ -296,8 +313,14 @@ impl Document {
         }
         let mut choisie = None;
         for (i, l) in self.lignes.iter().enumerate() {
+            if !l.starts_with('0') {
+                continue;
+            }
             let Some(Ligne { niveau: 0, xref: Some(x), tag: "FAM", .. }) = analyser_ligne(l) else { continue };
-            let bornes = self.bloc(x, "FAM").unwrap_or((i, i + 1));
+            // Fin de l'enregistrement trouvée sur place : un appel à bloc() par famille
+            // rendrait la recherche quadratique sur un fichier de plusieurs milliers de familles.
+            let fin = self.lignes[i + 1..].iter().position(|l| l.starts_with("0 ")).map_or(self.lignes.len(), |k| i + 1 + k);
+            let bornes = (i, fin);
             let a_pere = pere.is_some_and(|p| self.bloc_contient(bornes, "HUSB", p));
             let a_mere = mere.is_some_and(|m| self.bloc_contient(bornes, "WIFE", m));
             let convient = match (pere, mere) {
@@ -405,6 +428,339 @@ impl Document {
             i += 1;
         }
         self.lignes = nettoye;
+    }
+
+    /// Retire de l'enregistrement chaque ligne `1 TAG valeur`, avec ses lignes
+    /// subordonnées (`2 PEDI`, `2 _FREL`…). Rend le nombre de liens retirés.
+    pub fn retirer_reference(&mut self, xref: &str, tag_bloc: &str, tag: &str, valeur: &str) -> usize {
+        let Some((a, b)) = self.bloc(xref, tag_bloc) else { return 0 };
+        let mut garde = Vec::with_capacity(b - a);
+        let mut retires = 0;
+        let mut i = a;
+        while i < b {
+            let l = &self.lignes[i];
+            if i > a && matches!(analyser_ligne(l), Some(Ligne { niveau: 1, tag: t, valeur: v, .. }) if t == tag && v == valeur) {
+                retires += 1;
+                i = fin_sous_bloc(&self.lignes[..b], i);
+                continue;
+            }
+            garde.push(l.clone());
+            i += 1;
+        }
+        if retires > 0 {
+            self.lignes.splice(a..b, garde);
+        }
+        retires
+    }
+
+    /// Supprime l'enregistrement d'une famille et tous les renvois `FAMS` / `FAMC` vers elle.
+    pub fn supprimer_famille(&mut self, fid: &str) -> bool {
+        let Some((a, b)) = self.bloc(fid, "FAM") else { return false };
+        self.lignes.drain(a..b);
+        let mut sortie = Vec::with_capacity(self.lignes.len());
+        let mut sauter = false;
+        for l in std::mem::take(&mut self.lignes) {
+            if sauter {
+                if niveau_de(&l).is_some_and(|n| n > 1) {
+                    continue;
+                }
+                sauter = false;
+            }
+            if l.contains(fid)
+                && matches!(analyser_ligne(&l), Some(Ligne { niveau: 1, tag: "FAMS" | "FAMC", valeur, .. }) if valeur == fid)
+            {
+                sauter = true;
+                continue;
+            }
+            sortie.push(l);
+        }
+        self.lignes = sortie;
+        true
+    }
+
+    /// Union nouvelle, sans enfant, entre deux conjoints. Rend l'identifiant de la famille.
+    pub fn creer_union(&mut self, mari: Option<&str>, epouse: Option<&str>) -> String {
+        let f = self.prochain_id_famille();
+        let mut b = vec![format!("0 {f} FAM")];
+        if let Some(p) = mari {
+            b.push(format!("1 HUSB {p}"));
+        }
+        if let Some(m) = epouse {
+            b.push(format!("1 WIFE {m}"));
+        }
+        let pos = self.position_trlr();
+        self.lignes.splice(pos..pos, b);
+        for c in [mari, epouse].into_iter().flatten() {
+            self.ajouter_reference(c, "INDI", "FAMS", &f);
+        }
+        f
+    }
+
+    /// Place un conjoint (`HUSB` ou `WIFE`) dans une famille existante, en tête de
+    /// l'enregistrement, et pose le renvoi `FAMS` sur sa fiche.
+    pub fn inserer_conjoint(&mut self, fid: &str, balise: &str, pid: &str) -> bool {
+        let Some((a, b)) = self.bloc(fid, "FAM") else { return false };
+        if self.bloc_contient((a, b), balise, pid) {
+            return false;
+        }
+        let mut pos = a + 1;
+        if balise == "WIFE" && pos < b && matches!(analyser_ligne(&self.lignes[pos]), Some(Ligne { niveau: 1, tag: "HUSB", .. })) {
+            pos = fin_sous_bloc(&self.lignes[..b], pos);
+        }
+        self.lignes.insert(pos, format!("1 {balise} {pid}"));
+        self.ajouter_reference(pid, "INDI", "FAMS", fid);
+        true
+    }
+
+    /// Membres d'une famille tels qu'ils figurent dans le fichier.
+    pub fn membres(&self, fid: &str) -> Option<Membres> {
+        let (a, b) = self.bloc(fid, "FAM")?;
+        let mut m = Membres::default();
+        for l in &self.lignes[a + 1..b] {
+            let Some(Ligne { niveau: 1, tag, valeur, .. }) = analyser_ligne(l) else { continue };
+            match tag {
+                "HUSB" if est_xref(valeur) => m.mari = Some(valeur.to_string()),
+                "WIFE" if est_xref(valeur) => m.epouse = Some(valeur.to_string()),
+                "CHIL" if est_xref(valeur) => m.enfants.push(valeur.to_string()),
+                "HUSB" | "WIFE" | "CHIL" | "CHAN" | "_UID" | "RIN" | "_UPD" | "REFN" => {}
+                _ => m.autres_donnees = true,
+            }
+        }
+        Some(m)
+    }
+
+    /// Réécrit l'identité d'une personne (nom, sexe, naissance, décès) sans toucher au
+    /// reste de sa fiche. Seuls les champs qui diffèrent de `actuel` sont réécrits.
+    /// Rend vrai si le fichier a changé.
+    pub fn modifier_identite(&mut self, id: &str, actuel: &Identite, nouveau: &Identite) -> Result<bool, String> {
+        let (a, b) = self.bloc(id, "INDI").ok_or("Personne introuvable dans le fichier GEDCOM.")?;
+        let mut bloc: Vec<String> = self.lignes[a..b].to_vec();
+        if nouveau.prenoms != actuel.prenoms || nouveau.nom != actuel.nom {
+            modifier_nom(&mut bloc, &nouveau.prenoms, &nouveau.nom);
+        }
+        if nouveau.sexe != actuel.sexe {
+            modifier_sexe(&mut bloc, &nouveau.sexe);
+        }
+        for (tag, date, lieu, date0, lieu0) in [
+            ("BIRT", &nouveau.naissance, &nouveau.lieu_naissance, &actuel.naissance, &actuel.lieu_naissance),
+            ("DEAT", &nouveau.deces, &nouveau.lieu_deces, &actuel.deces, &actuel.lieu_deces),
+        ] {
+            let d = (date != date0).then_some(date.as_str());
+            let l = (lieu != lieu0).then_some(lieu.as_str());
+            if d.is_some() || l.is_some() {
+                modifier_evenement(&mut bloc, tag, d, l);
+            }
+        }
+        if bloc[..] == self.lignes[a..b] {
+            return Ok(false);
+        }
+        self.lignes.splice(a..b, bloc);
+        Ok(true)
+    }
+}
+
+/// Membres d'une famille relevés dans le fichier.
+#[derive(Debug, Default, Clone, PartialEq)]
+pub struct Membres {
+    pub mari: Option<String>,
+    pub epouse: Option<String>,
+    pub enfants: Vec<String>,
+    /// Vrai si la famille porte autre chose que ses membres (mariage, source, note…).
+    pub autres_donnees: bool,
+}
+
+/// Identité d'une personne telle que la présente la fiche, et telle qu'elle se modifie.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct Identite {
+    pub prenoms: String,
+    pub nom: String,
+    pub sexe: String,
+    pub naissance: String,
+    pub lieu_naissance: String,
+    pub deces: String,
+    pub lieu_deces: String,
+}
+
+impl Identite {
+    /// Valeurs présentées dans la fiche. Un nom sans barres GEDCOM (« Jean Dupont »)
+    /// se présente en entier dans les prénoms plutôt que de paraître vide.
+    pub fn de(p: &Personne) -> Self {
+        let (mut prenoms, nom) = (p.prenoms_affiches(), p.nom_famille());
+        if prenoms.is_empty() && nom.is_empty() {
+            prenoms = p.nom_gedcom.trim().to_string();
+        }
+        Self {
+            prenoms,
+            nom,
+            sexe: p.sexe.trim().to_string(),
+            naissance: p.naissance.trim().to_string(),
+            lieu_naissance: p.lieu_naissance.trim().to_string(),
+            deces: p.deces.trim().to_string(),
+            lieu_deces: p.lieu_deces.trim().to_string(),
+        }
+    }
+
+    /// Contrôle et nettoie une saisie : espaces superflus, sexe M, F ou U.
+    pub fn nettoyee(&self) -> Result<Self, String> {
+        let net = |t: &str| t.split_whitespace().collect::<Vec<_>>().join(" ");
+        let sexe = net(&self.sexe).to_uppercase();
+        let sexe = match sexe.as_str() {
+            "" | "M" | "F" | "U" => sexe,
+            "H" | "MASCULIN" | "HOMME" => "M".into(),
+            "FÉMININ" | "FEMININ" | "FEMME" => "F".into(),
+            "INCONNU" | "?" => "U".into(),
+            _ => return Err("Le sexe s'indique par M, F ou U (inconnu).".into()),
+        };
+        let r = Self {
+            prenoms: net(&self.prenoms),
+            nom: net(&self.nom).replace('/', ""),
+            sexe,
+            naissance: net(&self.naissance),
+            lieu_naissance: net(&self.lieu_naissance),
+            deces: net(&self.deces),
+            lieu_deces: net(&self.lieu_deces),
+        };
+        if r.prenoms.is_empty() && r.nom.is_empty() {
+            return Err("Indiquez au moins un prénom ou un nom.".into());
+        }
+        Ok(r)
+    }
+
+    /// Valeur de `1 NAME` : « Prénoms /NOM/ ».
+    pub fn nom_gedcom(&self) -> String {
+        if self.nom.is_empty() { self.prenoms.clone() } else { format!("{} /{}/", self.prenoms, self.nom).trim().to_string() }
+    }
+
+    /// Personne nouvelle portant cette identité.
+    pub fn personne(&self, id: &str) -> Personne {
+        let mut p = Personne::nouvelle(id);
+        p.nom_gedcom = self.nom_gedcom();
+        p.prenoms = self.prenoms.clone();
+        p.nom = self.nom.clone();
+        p.sexe = self.sexe.clone();
+        p.naissance = self.naissance.clone();
+        p.lieu_naissance = self.lieu_naissance.clone();
+        p.deces = self.deces.clone();
+        p.lieu_deces = self.lieu_deces.clone();
+        p
+    }
+}
+
+/// Niveau d'une ligne GEDCOM, lu sur son premier mot.
+fn niveau_de(l: &str) -> Option<u32> {
+    l.split_whitespace().next()?.parse().ok()
+}
+
+fn valeur_de(l: &str) -> String {
+    analyser_ligne(l).map(|x| x.valeur.to_string()).unwrap_or_default()
+}
+
+/// Fin (exclue) de la structure ouverte par la ligne `i` : ses lignes subordonnées.
+fn fin_sous_bloc(lignes: &[String], i: usize) -> usize {
+    let n = niveau_de(&lignes[i]).unwrap_or(0);
+    let mut j = i + 1;
+    while j < lignes.len() && niveau_de(&lignes[j]).is_some_and(|m| m > n) {
+        j += 1;
+    }
+    j
+}
+
+/// Première ligne de niveau 1 portant ce tag dans un enregistrement (index 0 = en-tête).
+fn trouver1(bloc: &[String], tag: &str) -> Option<usize> {
+    (1..bloc.len()).find(|&i| matches!(analyser_ligne(&bloc[i]), Some(Ligne { niveau: 1, tag: t, .. }) if t == tag))
+}
+
+/// Première sous-ligne de niveau 2 portant ce tag dans la structure ouverte en `i`.
+fn trouver2(bloc: &[String], i: usize, tag: &str) -> Option<usize> {
+    (i + 1..fin_sous_bloc(bloc, i)).find(|&j| matches!(analyser_ligne(&bloc[j]), Some(Ligne { niveau: 2, tag: t, .. }) if t == tag))
+}
+
+fn retirer_structure(bloc: &mut Vec<String>, i: usize) {
+    let fin = fin_sous_bloc(bloc, i);
+    bloc.drain(i..fin);
+}
+
+fn modifier_nom(bloc: &mut Vec<String>, prenoms: &str, nom: &str) {
+    let base = if nom.is_empty() { prenoms.to_string() } else { format!("{prenoms} /{nom}/").trim().to_string() };
+    let Some(i) = trouver1(bloc, "NAME") else {
+        let mut l = vec![format!("1 NAME {base}")];
+        if !prenoms.is_empty() {
+            l.push(format!("2 GIVN {prenoms}"));
+        }
+        if !nom.is_empty() {
+            l.push(format!("2 SURN {nom}"));
+        }
+        bloc.splice(1..1, l);
+        return;
+    };
+    // Ce qui suit le nom de famille (« Jr », « dit Martin ») est conservé.
+    let ancien = valeur_de(&bloc[i]);
+    let suffixe = ancien.splitn(3, '/').nth(2).map(str::trim).unwrap_or("").to_string();
+    let valeur = if suffixe.is_empty() || nom.is_empty() { base } else { format!("{base} {suffixe}") };
+    bloc[i] = format!("1 NAME {valeur}").trim_end().to_string();
+    for (tag, v) in [("GIVN", prenoms), ("SURN", nom)] {
+        if let Some(j) = trouver2(bloc, i, tag) {
+            if v.is_empty() {
+                retirer_structure(bloc, j);
+            } else {
+                bloc[j] = format!("2 {tag} {v}");
+            }
+        }
+    }
+}
+
+fn modifier_sexe(bloc: &mut Vec<String>, sexe: &str) {
+    match trouver1(bloc, "SEX") {
+        Some(i) if sexe.is_empty() => retirer_structure(bloc, i),
+        Some(i) => bloc[i] = format!("1 SEX {sexe}"),
+        None if sexe.is_empty() => {}
+        None => {
+            let pos = trouver1(bloc, "NAME").map_or(1, |i| fin_sous_bloc(bloc, i));
+            bloc.insert(pos, format!("1 SEX {sexe}"));
+        }
+    }
+}
+
+/// Date et lieu d'un événement (`BIRT`, `DEAT`) : `None` laisse la valeur en place,
+/// une chaîne vide la retire. Un événement qui n'a plus rien à dire est retiré.
+fn modifier_evenement(bloc: &mut Vec<String>, tag: &str, date: Option<&str>, lieu: Option<&str>) {
+    let Some(i) = trouver1(bloc, tag) else {
+        let (d, l) = (date.unwrap_or(""), lieu.unwrap_or(""));
+        if d.is_empty() && l.is_empty() {
+            return;
+        }
+        let mut lignes = vec![format!("1 {tag}")];
+        if !d.is_empty() {
+            lignes.push(format!("2 DATE {d}"));
+        }
+        if !l.is_empty() {
+            lignes.push(format!("2 PLAC {l}"));
+        }
+        // La naissance avant le décès, le décès juste après la naissance ; à défaut,
+        // l'un et l'autre après le nom et le sexe.
+        let apres_identite = ["NAME", "SEX"].iter().filter_map(|t| trouver1(bloc, t)).map(|i| fin_sous_bloc(bloc, i)).max().unwrap_or(1);
+        let pos = if tag == "BIRT" {
+            trouver1(bloc, "DEAT").unwrap_or(apres_identite)
+        } else {
+            trouver1(bloc, "BIRT").map_or(apres_identite, |i| fin_sous_bloc(bloc, i))
+        };
+        bloc.splice(pos..pos, lignes);
+        return;
+    };
+    for (sous, valeur) in [("DATE", date), ("PLAC", lieu)] {
+        let Some(v) = valeur else { continue };
+        match trouver2(bloc, i, sous) {
+            Some(j) if v.is_empty() => retirer_structure(bloc, j),
+            Some(j) => bloc[j] = format!("2 {sous} {v}"),
+            None if v.is_empty() => {}
+            None => {
+                let pos = if sous == "PLAC" { trouver2(bloc, i, "DATE").map_or(i + 1, |d| fin_sous_bloc(bloc, d)) } else { i + 1 };
+                bloc.insert(pos, format!("2 {sous} {v}"));
+            }
+        }
+    }
+    if fin_sous_bloc(bloc, i) == i + 1 && valeur_de(&bloc[i]).is_empty() {
+        bloc.remove(i);
     }
 }
 

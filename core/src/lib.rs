@@ -1,8 +1,9 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-//! Noyau Rust de GenFam : lecture et modification GEDCOM, requêtes généalogiques,
+//! Noyau Rust de GenFam : lecture et modification GEDCOM, liens familiaux, requêtes généalogiques,
 //! présentations, pedigree, ordonnances, liaison FamilySearch et recherche d'ascendance.
 //!
 //! Portage en Rust / Qt 6 de GENFAMILLE.pyw, écrit par Claude Boisseau.
+pub mod edition;
 pub mod familysearch;
 pub mod fiches;
 pub mod gedcom;

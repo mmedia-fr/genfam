@@ -53,9 +53,9 @@ Popup {
             Layout.topMargin: 20
             Layout.preferredWidth: 360
             spacing: 10
-            Bouton { Layout.fillWidth: true; text: "📂  Ouvrir un fichier GEDCOM"; onClicked: accueil.ouvrir() }
-            Bouton { Layout.fillWidth: true; text: "📄  Créer un nouveau fichier GEDCOM"; couleur: "#4F8A5B"; onClicked: accueil.creer() }
-            Bouton { Layout.fillWidth: true; Layout.topMargin: 12; text: "⏻  Quitter"; couleur: "#B83A3A"; onClicked: accueil.quitter() }
+            Bouton { Layout.fillWidth: true; text: "📂  Ouvrir un fichier GEDCOM"; aide: "Ouvrir un fichier .ged existant"; onClicked: accueil.ouvrir() }
+            Bouton { Layout.fillWidth: true; text: "📄  Créer un nouveau fichier GEDCOM"; couleur: "#4F8A5B"; aide: "Commencer un arbre vide"; onClicked: accueil.creer() }
+            Bouton { Layout.fillWidth: true; Layout.topMargin: 12; text: "⏻  Quitter"; couleur: "#B83A3A"; aide: "Quitter GenFam"; onClicked: accueil.quitter() }
         }
         Text {
             Layout.alignment: Qt.AlignHCenter

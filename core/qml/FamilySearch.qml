@@ -91,6 +91,7 @@ Window {
                     RowLayout {
                         Bouton {
                             text: w.noyau && w.noyau.connecte ? "Se reconnecter" : "Se connecter à FamilySearch"
+                            aide: "Ouvrir la page de connexion FamilySearch dans le navigateur (le mot de passe se saisit sur leur site)"
                             enabled: w.noyau && !w.noyau.occupe
                             onClicked: {
                                 reglages.cle = cle.text.trim()
@@ -102,6 +103,7 @@ Window {
                         }
                         Bouton {
                             text: "Se déconnecter"
+                            aide: "Fermer la session FamilySearch"
                             couleur: "#D9E4ED"; couleurTexte: "#234E70"
                             visible: w.noyau && w.noyau.connecte
                             onClicked: w.noyau.deconnecter()
@@ -142,6 +144,7 @@ Window {
                     }
                     Bouton {
                         text: "⬇ Importer depuis FamilySearch"
+                        aide: "Ajouter au fichier les ancêtres absents, reliés à la personne ; rien de ce qui existe n'est modifié"
                         couleur: "#4F8A5B"
                         enabled: w.personne !== ""
                         onClicked: w.noyau.importer(w.personne, fsid.text, generations.value)
@@ -167,6 +170,7 @@ Window {
                 Layout.rightMargin: 12
                 Layout.bottomMargin: 12
                 text: "Fermer"
+                aide: "Fermer cette fenêtre"
                 couleur: "#D9E4ED"; couleurTexte: "#234E70"
                 onClicked: w.close()
             }

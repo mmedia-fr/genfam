@@ -1,11 +1,11 @@
 ﻿; Installeur Windows de GenFam (Inno Setup 6).
 ;
-; Compilation : ISCC.exe /DAppVersion=8.1.0 build\genfam.iss
+; Compilation : ISCC.exe /DAppVersion=8.2.0 build\genfam.iss
 ; Prérequis   : dist\GenFam\ contient GenFam.exe et les bibliothèques Qt (windeployqt).
 ; Sortie      : dist\GenFam-<version>-setup.exe
 
 #ifndef AppVersion
-  #define AppVersion "8.1.0"
+  #define AppVersion "8.2.0"
 #endif
 #define AppName        "GenFam"
 #define AppLongName    "GenFam — Généalogie"
@@ -23,6 +23,11 @@ DefaultDirName={autopf}\{#AppName}
 DefaultGroupName={#AppName}
 UninstallDisplayIcon={app}\{#AppExe}
 UninstallDisplayName={#AppLongName} {#AppVersion}
+; Numéro de version de l'installeur lui-même (propriétés du fichier).
+VersionInfoVersion={#AppVersion}
+VersionInfoCompany=M-Media
+VersionInfoDescription=Installation de {#AppLongName}
+VersionInfoProductName={#AppName}
 OutputDir=..\dist
 OutputBaseFilename={#AppName}-{#AppVersion}-setup
 SetupIconFile=..\assets\genfam.ico

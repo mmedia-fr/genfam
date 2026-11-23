@@ -85,10 +85,10 @@ Window {
             }
         }
         RowLayout {
-            Bouton { text: "✓ Définir comme N° 1"; couleur: "#4F8A5B"; enabled: w.choix !== ""; onClicked: w.valider() }
-            Bouton { text: "↶ Réinitialiser"; couleur: "#D9E4ED"; couleurTexte: "#234E70"; onClicked: { w.noyau.reinitialiserRacine(); w.close() } }
+            Bouton { text: "✓ Définir comme N° 1"; couleur: "#4F8A5B"; enabled: w.choix !== ""; aide: "Numéroter l'ascendance à partir de cette personne"; onClicked: w.valider() }
+            Bouton { text: "↶ Réinitialiser"; couleur: "#D9E4ED"; couleurTexte: "#234E70"; aide: "Retirer la numérotation Ahnentafel"; onClicked: { w.noyau.reinitialiserRacine(); w.close() } }
             Item { Layout.fillWidth: true }
-            Bouton { text: "Annuler"; couleur: "#D9E4ED"; couleurTexte: "#234E70"; onClicked: w.close() }
+            Bouton { text: "Annuler"; couleur: "#D9E4ED"; couleurTexte: "#234E70"; aide: "Fermer sans rien changer"; onClicked: w.close() }
         }
     }
 }

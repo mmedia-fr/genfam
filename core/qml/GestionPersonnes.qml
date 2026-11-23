@@ -12,7 +12,6 @@ Window {
     property var noyau
     property var lignes: []
     property string choix: ""
-    property var parents: []
 
     title: "Ajouter / supprimer une personne"
     width: 760
@@ -26,7 +25,7 @@ Window {
     }
 
     function remplir() {
-        lignes = JSON.parse(noyau.personnes("", "Ahnentafel"))
+        lignes = JSON.parse(noyau.personnes(filtre.text, "Ahnentafel"))
         choix = ""
     }
 
@@ -46,6 +45,17 @@ Window {
         anchors.margins: 12
         spacing: 6
         Label { text: "GESTION DES PERSONNES"; font.bold: true; font.pixelSize: 14; color: "#234E70" }
+        RowLayout {
+            Layout.fillWidth: true
+            Label { text: "Rechercher :" }
+            TextField {
+                id: filtre
+                Layout.fillWidth: true
+                placeholderText: "Nom, prénom, identifiant, lieu ou année"
+                onTextChanged: minuterie.restart()
+            }
+            Timer { id: minuterie; interval: 250; onTriggered: w.remplir() }
+        }
         Frame {
             Layout.fillWidth: true
             Layout.fillHeight: true
@@ -73,9 +83,10 @@ Window {
             }
         }
         RowLayout {
-            Bouton { text: "➕ Ajouter un nom"; couleur: "#4F8A5B"; onClicked: saisie.open() }
+            Bouton { text: "➕ Ajouter un nom"; couleur: "#4F8A5B"; aide: "Créer une personne, reliée si besoin à son père et à sa mère"; onClicked: saisie.open() }
             Bouton {
                 text: "🗑 Supprimer le nom sélectionné"; couleur: "#B83A3A"
+                aide: "Supprimer la personne choisie dans la liste, avec ses liens (une copie .bak est faite avant)"
                 onClicked: {
                     if (w.choix === "") { w.informer("Supprimer", "Sélectionnez une personne."); return }
                     confirmation.text = "Supprimer définitivement cette personne du GEDCOM ?\n\n" + w.noyau.nomDe(w.choix) + "\n" + w.choix
@@ -84,13 +95,14 @@ Window {
             }
             Bouton {
                 text: "↶ Annuler la dernière modification"; couleur: "#D8872F"
+                aide: "Rétablir le fichier tel qu'il était avant la dernière écriture (copie .bak)"
                 onClicked: {
                     const e = w.noyau.annuler()
                     w.informer("Annulation", e === "" ? "La dernière modification a été annulée." : e)
                 }
             }
             Item { Layout.fillWidth: true }
-            Bouton { text: "Fermer"; couleur: "#D9E4ED"; couleurTexte: "#234E70"; onClicked: w.close() }
+            Bouton { text: "Fermer"; couleur: "#D9E4ED"; couleurTexte: "#234E70"; aide: "Fermer cette fenêtre"; onClicked: w.close() }
         }
     }
 
@@ -113,61 +125,49 @@ Window {
         title: "Nouvelle personne"
         modal: true
         anchors.centerIn: parent
-        width: 560
-        height: Math.min(w.height - 20, 620)
+        width: Math.min(w.width - 20, 640)
+        height: Math.min(w.height - 20, 640)
         standardButtons: Dialog.Cancel
         onAboutToShow: {
-            for (const c of [prenoms, nom, sexe, naissance, lieuNaissance, deces, lieuDeces])
-                c.text = ""
-            w.parents = [{ id: "", libelle: "(aucun)" }].concat(JSON.parse(w.noyau.choixParents()))
-            pere.currentIndex = 0
-            mere.currentIndex = 0
+            formulaire.vider()
+            choixPere.effacer()
+            choixMere.effacer()
+            formulaire.focaliser()
         }
         ScrollView {
+            id: defil
             anchors.fill: parent
             contentWidth: availableWidth
             ColumnLayout {
-                width: parent.width
-                spacing: 3
-                Label { text: "Prénoms" }
-                TextField { id: prenoms; Layout.fillWidth: true }
-                Label { text: "Nom" }
-                TextField { id: nom; Layout.fillWidth: true }
-                Label { text: "Sexe (M/F)" }
-                TextField { id: sexe; Layout.preferredWidth: 60; maximumLength: 1 }
-                Label { text: "Date de naissance" }
-                TextField { id: naissance; Layout.fillWidth: true; placeholderText: "ex. 12 MAR 1950" }
-                Label { text: "Lieu de naissance" }
-                TextField { id: lieuNaissance; Layout.fillWidth: true }
-                Label { text: "Date de décès" }
-                TextField { id: deces; Layout.fillWidth: true }
-                Label { text: "Lieu de décès" }
-                TextField { id: lieuDeces; Layout.fillWidth: true }
-                Label { text: "Père (facultatif)" }
-                ComboBox { id: pere; Layout.fillWidth: true; model: w.parents; textRole: "libelle"; valueRole: "id" }
-                Label { text: "Mère (facultatif)" }
-                ComboBox { id: mere; Layout.fillWidth: true; model: w.parents; textRole: "libelle"; valueRole: "id" }
+                width: defil.availableWidth
+                spacing: 4
+                FormulaireIdentite { id: formulaire; Layout.fillWidth: true }
+                Label { text: "Père (facultatif)"; font.bold: true; Layout.topMargin: 6 }
+                ChoixPersonne { id: choixPere; Layout.fillWidth: true; noyau: w.noyau }
+                Label { text: "Mère (facultatif)"; font.bold: true }
+                ChoixPersonne { id: choixMere; Layout.fillWidth: true; noyau: w.noyau }
                 Label {
                     Layout.fillWidth: true
                     wrapMode: Text.WordWrap
                     color: "#425466"
-                    text: "Vous pouvez relier immédiatement la nouvelle personne à un père et/ou une mère déjà présents."
+                    text: "Tapez quelques lettres du nom du père ou de la mère, puis choisissez dans la liste : "
+                          + "la nouvelle personne leur est reliée aussitôt. Pour relier ensuite conjoints et enfants, "
+                          + "ouvrez sa fiche (bouton « Fiche et liens » de la fenêtre principale)."
                 }
                 Bouton {
                     Layout.fillWidth: true
                     Layout.topMargin: 8
                     text: "✓ VALIDER L'AJOUT"
                     couleur: "#4F8A5B"
+                    aide: "Écrire la nouvelle personne dans le fichier GEDCOM (une copie .bak est faite avant)"
                     onClicked: {
-                        const r = JSON.parse(w.noyau.ajouterPersonne(JSON.stringify({
-                            prenoms: prenoms.text, nom: nom.text, sexe: sexe.text,
-                            naissance: naissance.text, lieuNaissance: lieuNaissance.text,
-                            deces: deces.text, lieuDeces: lieuDeces.text,
-                            pere: pere.currentValue || "", mere: mere.currentValue || ""
-                        })))
+                        const v = formulaire.valeurs()
+                        v.pere = choixPere.choisi
+                        v.mere = choixMere.choisi
+                        const r = JSON.parse(w.noyau.ajouterPersonne(JSON.stringify(v)))
                         if (r.ok)
                             saisie.close()
-                        w.informer(r.ok ? "Ajouter" : "Ajouter", r.message)
+                        w.informer("Ajouter", r.message)
                     }
                 }
             }

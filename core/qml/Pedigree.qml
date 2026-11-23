@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Pedigree familial interactif (show_pedigree) : un clic sur une carte la place au
-// centre ; le nombre de générations et le zoom se règlent dans la barre d'outils.
+// centre, un double-clic ouvre sa fiche à onglets ; le nombre de générations et le
+// zoom se règlent dans la barre d'outils.
 // La mise en page est calculée par le noyau ; ici, on ne fait que la dessiner.
 import QtQuick
 import QtQuick.Controls
@@ -15,6 +16,8 @@ Window {
     property var page: ({ largeur: 0, hauteur: 0, cartes: [], traits: [], etiquettes: [], centre: { x: 0, y: 0 } })
 
     signal centre(string id)
+    /// Double-clic sur une carte : ouvrir la fiche de la personne.
+    signal fiche(string id)
 
     title: "Pedigree familial — " + (noyau && personne !== "" ? noyau.nomDe(personne) : "")
     width: 1400
@@ -46,6 +49,20 @@ Window {
         personne = id
         w.centre(id)
         dessiner()
+    }
+
+    // Le recentrage d'un simple clic attend la fin du délai de double-clic : sinon la
+    // carte double-cliquée aurait déjà changé de place au second clic.
+    Timer {
+        id: clicDiffere
+        property string cible: ""
+        interval: 300
+        onTriggered: w.choisir(cible)
+    }
+
+    Connections {
+        target: w.noyau
+        function onRevisionChanged() { if (w.visible && w.personne !== "" && w.noyau.nomDe(w.personne) !== "") w.dessiner() }
     }
 
     ColumnLayout {
@@ -81,14 +98,21 @@ Window {
                 SpinBox { id: haut; from: 0; to: 20; value: 3; editable: true }
                 Label { text: "Descendants :"; font.bold: true; color: "#234E70" }
                 SpinBox { id: bas; from: 0; to: 20; value: 3; editable: true }
-                Bouton { text: "Appliquer"; onClicked: w.dessiner() }
-                Bouton { text: "＋ Zoom"; couleur: "#F4F7FA"; couleurTexte: "#234E70"; onClicked: { w.zoom = Math.min(1.5, w.zoom + 0.1); w.dessiner() } }
-                Bouton { text: "− Zoom"; couleur: "#F4F7FA"; couleurTexte: "#234E70"; onClicked: { w.zoom = Math.max(0.5, w.zoom - 0.1); w.dessiner() } }
-                Bouton { text: "100 %"; couleur: "#F4F7FA"; couleurTexte: "#234E70"; onClicked: { w.zoom = 0.85; w.dessiner() } }
-                Bouton { text: "⛶ Ajuster"; couleur: "#F4F7FA"; couleurTexte: "#234E70"; onClicked: { w.zoom = 0.65; w.dessiner() } }
-                Bouton { text: "🏠 Personne centrale"; couleur: "#F4F7FA"; couleurTexte: "#234E70"; onClicked: w.recentrer() }
+                Bouton { text: "Appliquer"; aide: "Redessiner avec le nombre de générations choisi"; onClicked: w.dessiner() }
+                Bouton { text: "＋ Zoom"; couleur: "#F4F7FA"; couleurTexte: "#234E70"; aide: "Agrandir les cartes"; onClicked: { w.zoom = Math.min(1.5, w.zoom + 0.1); w.dessiner() } }
+                Bouton { text: "− Zoom"; couleur: "#F4F7FA"; couleurTexte: "#234E70"; aide: "Réduire les cartes"; onClicked: { w.zoom = Math.max(0.5, w.zoom - 0.1); w.dessiner() } }
+                Bouton { text: "100 %"; couleur: "#F4F7FA"; couleurTexte: "#234E70"; aide: "Revenir à la taille normale des cartes"; onClicked: { w.zoom = 0.85; w.dessiner() } }
+                Bouton { text: "⛶ Ajuster"; couleur: "#F4F7FA"; couleurTexte: "#234E70"; aide: "Réduire pour voir davantage de générations"; onClicked: { w.zoom = 0.65; w.dessiner() } }
+                Bouton { text: "🏠 Personne centrale"; couleur: "#F4F7FA"; couleurTexte: "#234E70"; aide: "Ramener la vue sur la personne centrale"; onClicked: w.recentrer() }
+                Bouton { text: "📋 Fiche"; couleur: "#F4F7FA"; couleurTexte: "#234E70"; aide: "Ouvrir la fiche à onglets de la personne centrale"; onClicked: w.fiche(w.personne) }
                 Item { Layout.fillWidth: true }
-                Bouton { text: "Fermer"; couleur: "#F4F7FA"; couleurTexte: "#234E70"; onClicked: w.close() }
+                Bouton {
+                    text: w.visibility === Window.Maximized ? "🗗 Restaurer" : "🗖 Agrandir"
+                    couleur: "#F4F7FA"; couleurTexte: "#234E70"
+                    aide: w.visibility === Window.Maximized ? "Rendre à la fenêtre sa taille précédente" : "Agrandir le pedigree à tout l'écran"
+                    onClicked: w.visibility === Window.Maximized ? w.showNormal() : w.showMaximized()
+                }
+                Bouton { text: "Fermer"; couleur: "#F4F7FA"; couleurTexte: "#234E70"; aide: "Fermer le pedigree"; onClicked: w.close() }
             }
         }
 
@@ -215,7 +239,8 @@ Window {
                         MouseArea {
                             anchors.fill: parent
                             cursorShape: Qt.PointingHandCursor
-                            onClicked: w.choisir(carte.modelData.id)
+                            onClicked: { clicDiffere.cible = carte.modelData.id; clicDiffere.restart() }
+                            onDoubleClicked: { clicDiffere.stop(); w.fiche(carte.modelData.id) }
                         }
                     }
                 }
@@ -223,7 +248,7 @@ Window {
         }
 
         Text {
-            text: "● Cliquez sur une personne pour la placer au centre     │ Glissez pour déplacer le pedigree"
+            text: "● Cliquez sur une personne pour la placer au centre     │ Double-cliquez pour ouvrir sa fiche     │ Glissez pour déplacer le pedigree"
             color: "#425466"
         }
     }

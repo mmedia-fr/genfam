@@ -287,11 +287,13 @@ impl Arbre {
         if mere.is_none() {
             mere = parents.iter().copied().find(|x| x.sexe == "F");
         }
+        // Dernier recours, l'ordre du fichier — sans jamais donner la même personne pour
+        // père et mère : une mère seule laissait sinon la place du père occupée par elle.
         if pere.is_none() {
-            pere = parents.first().copied();
+            pere = parents.iter().copied().find(|x| mere.is_none_or(|m| m.id != x.id));
         }
         if mere.is_none() {
-            mere = parents.iter().copied().find(|x| pere.map_or(true, |pp| pp.id != x.id));
+            mere = parents.iter().copied().find(|x| pere.is_none_or(|pp| pp.id != x.id));
         }
         (pere, mere)
     }
@@ -331,35 +333,81 @@ impl Arbre {
         chemin.remove(&p.id);
     }
 
-    /// Recherche (nom, identifiant, lieux de naissance et de décès) et tri.
+    /// Recherche (nom, identifiant, lieux de naissance et de décès, années) et tri.
+    ///
+    /// Chaque mot de la requête doit figurer quelque part, sans tenir compte des
+    /// accents ni des majuscules : « dupont jean » trouve « Jean DUPONT », « eloise »
+    /// trouve « Éloïse ».
     pub fn rechercher(&self, requete: &str, tri: Tri, numeros: &HashMap<String, Vec<u64>>) -> Vec<&Personne> {
-        let q = requete.trim().to_lowercase();
-        let mut r: Vec<&Personne> = self
-            .personnes
-            .iter()
-            .filter(|p| {
-                q.is_empty()
-                    || p.nom_affiche().to_lowercase().contains(&q)
-                    || p.nom_gedcom.to_lowercase().contains(&q)
-                    || p.id.to_lowercase().contains(&q)
-                    || p.lieu_naissance.to_lowercase().contains(&q)
-                    || p.lieu_deces.to_lowercase().contains(&q)
-            })
-            .collect();
+        let mots = mots_requete(requete);
+        let mut r: Vec<&Personne> = self.personnes.iter().filter(|p| correspond(p, &mots)).collect();
         match tri {
-            Tri::Alpha => r.sort_by_key(|p| p.nom_liste().to_lowercase()),
-            Tri::Numerotation => r.sort_by_key(|p| cle_numerique(&p.id)),
-            Tri::Ahnentafel => r.sort_by_key(|p| {
+            Tri::Alpha => r.sort_by_cached_key(|p| (plier(&p.nom_liste()), cle_numerique(&p.id))),
+            Tri::Numerotation => r.sort_by_cached_key(|p| cle_numerique(&p.id)),
+            Tri::Ahnentafel => r.sort_by_cached_key(|p| {
                 let n = numeros.get(&p.id).and_then(|v| v.first()).copied().unwrap_or(u64::MAX);
-                (n, p.nom_liste().to_lowercase())
+                (n, plier(&p.nom_liste()), cle_numerique(&p.id))
             }),
         }
         r
     }
 }
 
-/// Clé de tri d'un identifiant GEDCOM : son nombre final, puis le texte.
-fn cle_numerique(id: &str) -> (u64, String) {
+/// Mots d'une requête, pliés (minuscules sans accents).
+pub fn mots_requete(requete: &str) -> Vec<String> {
+    plier(requete).split_whitespace().map(str::to_string).collect()
+}
+
+/// Vrai si chaque mot figure dans le nom, l'identifiant, les lieux ou les dates.
+pub fn correspond(p: &Personne, mots: &[String]) -> bool {
+    if mots.is_empty() {
+        return true;
+    }
+    let botte = plier(&format!(
+        "{} {} {} {} {} {} {}",
+        p.nom_affiche(), p.nom_gedcom, p.id, p.lieu_naissance, p.lieu_deces, p.naissance, p.deces
+    ));
+    mots.iter().all(|m| botte.contains(m.as_str()))
+}
+
+/// Minuscules sans accents : clé de recherche et de tri alphabétique (« Élise » se
+/// range avec les E, « Œuvray » avec les O).
+pub fn plier(t: &str) -> String {
+    let mut r = String::with_capacity(t.len());
+    for c in t.chars().flat_map(char::to_lowercase) {
+        match c {
+            'à' | 'â' | 'ä' | 'á' | 'ã' | 'å' => r.push('a'),
+            'ç' => r.push('c'),
+            'é' | 'è' | 'ê' | 'ë' => r.push('e'),
+            'î' | 'ï' | 'í' | 'ì' => r.push('i'),
+            'ô' | 'ö' | 'ó' | 'ò' | 'õ' => r.push('o'),
+            'ù' | 'û' | 'ü' | 'ú' => r.push('u'),
+            'ÿ' | 'ý' => r.push('y'),
+            'ñ' => r.push('n'),
+            'œ' => r.push_str("oe"),
+            'æ' => r.push_str("ae"),
+            'ß' => r.push_str("ss"),
+            c => r.push(c),
+        }
+    }
+    r
+}
+
+/// Dates abrégées d'une personne, pour distinguer des homonymes : « ° 1850 † 1920 ».
+pub fn dates_courtes(p: &Personne) -> String {
+    let mut d = Vec::new();
+    if !p.naissance.trim().is_empty() {
+        d.push(format!("° {}", p.naissance.trim()));
+    }
+    if !p.deces.trim().is_empty() {
+        d.push(format!("† {}", p.deces.trim()));
+    }
+    d.join("  ")
+}
+
+/// Clé de tri d'un identifiant GEDCOM : son nombre final, puis le texte
+/// (I2 avant I10, et non l'inverse comme dans un tri alphabétique).
+pub fn cle_numerique(id: &str) -> (u64, String) {
     let coeur = id.trim_matches('@');
     let debut = coeur.len() - coeur.chars().rev().take_while(|c| c.is_ascii_digit()).count();
     (coeur[debut..].parse().unwrap_or(u64::MAX), id.to_lowercase())
@@ -371,4 +419,39 @@ pub fn libelle_numeros(numeros: &HashMap<String, Vec<u64>>, id: &str) -> String 
         .get(id)
         .map(|v| v.iter().map(|n| n.to_string()).collect::<Vec<_>>().join(" / "))
         .unwrap_or_default()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::gedcom::analyser;
+
+    #[test]
+    fn recherche_par_mots_et_tris() {
+        let texte = "0 @I10@ INDI\n1 NAME Éloïse /ÉMERY/\n1 BIRT\n2 DATE 1850\n0 @I2@ INDI\n1 NAME Jean /DUPONT/\n\
+                     0 @I1@ INDI\n1 NAME Zoé /DURAND/\n0 @I9@ INDI\n1 NAME Anne /EVRARD/\n0 TRLR\n";
+        let a = analyser(texte);
+        let vide = HashMap::new();
+        let ids = |v: Vec<&Personne>| v.into_iter().map(|p| p.id.clone()).collect::<Vec<_>>();
+        // Mots dans le désordre, sans accents, années.
+        assert_eq!(ids(a.rechercher("dupont jean", Tri::Alpha, &vide)), vec!["@I2@"]);
+        assert_eq!(ids(a.rechercher("eloise", Tri::Alpha, &vide)), vec!["@I10@"]);
+        assert_eq!(ids(a.rechercher("emery 1850", Tri::Alpha, &vide)), vec!["@I10@"]);
+        assert!(a.rechercher("dupont marie", Tri::Alpha, &vide).is_empty());
+        // Alphabétique sans accents : ÉMERY entre DURAND et EVRARD.
+        assert_eq!(ids(a.rechercher("", Tri::Alpha, &vide)), vec!["@I2@", "@I1@", "@I10@", "@I9@"]);
+        // Numérique : I2 avant I10.
+        assert_eq!(ids(a.rechercher("", Tri::Numerotation, &vide)), vec!["@I1@", "@I2@", "@I9@", "@I10@"]);
+        assert_eq!(plier("Œuvray-Lefèvre"), "oeuvray-lefevre");
+    }
+
+    #[test]
+    fn mere_seule() {
+        let a = analyser("0 @I1@ INDI\n1 NAME A /X/\n0 @I2@ INDI\n1 NAME B /X/\n1 SEX F\n0 @F1@ FAM\n1 WIFE @I2@\n1 CHIL @I1@\n0 TRLR\n");
+        let (pere, mere) = a.pere_mere(a.personne("@I1@").unwrap());
+        assert!(pere.is_none(), "la mère seule ne doit pas tenir aussi la place du père");
+        assert_eq!(mere.unwrap().id, "@I2@");
+        // Ahnentafel : la mère reçoit le seul numéro 3.
+        assert_eq!(a.ahnentafel("@I1@")["@I2@"], vec![3]);
+    }
 }

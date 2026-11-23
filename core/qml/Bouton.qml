@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Bouton coloré, repris de l'habillage de la version Python (styles ttk « Primary »,
-// « Green », « Orange », « Purple », « Red », « Light »).
+// « Green », « Orange », « Purple », « Red », « Light »), avec sa bulle d'aide.
 import QtQuick
 import QtQuick.Controls
 
@@ -9,6 +9,8 @@ Button {
 
     property color couleur: "#2E75B6"
     property color couleurTexte: "white"
+    /// Bulle d'aide montrée au survol : ce que fait le bouton, en une phrase.
+    property string aide: ""
 
     font.bold: true
     font.pixelSize: 12
@@ -16,6 +18,11 @@ Button {
     rightPadding: 11
     topPadding: 7
     bottomPadding: 7
+
+    ToolTip.visible: hovered && aide !== ""
+    ToolTip.text: aide
+    ToolTip.delay: 600
+    ToolTip.timeout: 8000
 
     contentItem: Text {
         text: b.text
