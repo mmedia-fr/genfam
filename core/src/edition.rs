@@ -624,7 +624,9 @@ mod tests {
 
     #[test]
     fn sous_lignes_des_liens_retirees_avec_eux() {
-        let texte = EXEMPLE.replace("1 CHIL @I4@\n", "1 CHIL @I4@\n2 _FREL Natural\n2 _MREL Natural\n").replace(
+        // Fichier d'exemple ramené aux fins de ligne LF (CRLF dans un dépôt extrait sous Windows).
+        let texte = EXEMPLE.replace("\r\n", "\n");
+        let texte = texte.replace("1 CHIL @I4@\n", "1 CHIL @I4@\n2 _FREL Natural\n2 _MREL Natural\n").replace(
             "1 FAMC @F1@\n0 @I5@",
             "1 FAMC @F1@\n2 PEDI birth\n0 @I5@",
         );
