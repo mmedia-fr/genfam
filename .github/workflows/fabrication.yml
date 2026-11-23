@@ -71,6 +71,10 @@ jobs:
           # n'en charge aucune.
           "$QT_ROOT_DIR/bin/windeployqt.exe" --release --qmldir core/qml --no-translations \
             --no-opengl-sw --no-system-d3d-compiler --no-system-dxc-compiler dist/GenFam/GenFam.exe
+          # Runtime Visual C++ (Qt, main.cpp et le noyau Rust en dépendent) déposé à côté
+          # de l'exécutable : l'installation se fait sans élévation, et vc_redist.x64.exe,
+          # que windeployqt joint sans le lancer, en exigerait une.
+          rm -f dist/GenFam/vc_redist*.exe
           avant=$(du -sm dist/GenFam | cut -f1)
           # Seul le style Fusion est utilisé (main.cpp), avec Basic dont il hérite :
           # windeployqt livre tous les styles de Qt Quick Controls, les autres sont retirés.
@@ -90,10 +94,6 @@ jobs:
           done
           echo "Paquet : ${avant} Mo livrés par windeployqt, $(du -sm dist/GenFam | cut -f1) Mo après le retrait des styles inutilisés"
           find dist/GenFam -type f -size +1M -exec du -k {} + | sort -rn | head -25 || true
-          # Runtime Visual C++ (Qt, main.cpp et le noyau Rust en dépendent) déposé à côté
-          # de l'exécutable : l'installation se fait sans élévation, et vc_redist.x64.exe,
-          # que windeployqt joint sans le lancer, en exigerait une.
-          rm -f dist/GenFam/vc_redist*.exe
           crt=$(ls -d "$(cygpath -u "$VCToolsRedistDir")"x64/Microsoft.VC14*.CRT | head -1)
           test -d "$crt"
           cp "$crt"/*.dll dist/GenFam/
@@ -127,6 +127,8 @@ jobs:
           $setup = Get-ChildItem dist\GenFam-*-setup.exe | Select-Object -First 1
           $p = Start-Process -FilePath $setup.FullName -ArgumentList "/VERYSILENT", "/SUPPRESSMSGBOXES", "/CURRENTUSER", "/DIR=`"$env:RUNNER_TEMP\GenFamInstalle`"" -Wait -PassThru
           if ($p.ExitCode -ne 0) { throw "installation en echec : code $($p.ExitCode)" }
+          $taille = (Get-ChildItem -Recurse -File "$env:RUNNER_TEMP\GenFamInstalle" | Measure-Object Length -Sum).Sum / 1MB
+          Write-Host ("Programme installe : {0:N1} Mo" -f $taille)
           foreach ($dll in "vcruntime140.dll", "vcruntime140_1.dll", "msvcp140.dll") {
             if (-not (Test-Path "$env:RUNNER_TEMP\GenFamInstalle\$dll")) { throw "runtime Visual C++ absent de l'installe : $dll" }
           }
