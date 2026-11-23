@@ -287,11 +287,13 @@ impl Arbre {
         if mere.is_none() {
             mere = parents.iter().copied().find(|x| x.sexe == "F");
         }
+        // Dernier recours, l'ordre du fichier — sans jamais donner la même personne pour
+        // père et mère : une mère seule laissait sinon la place du père occupée par elle.
         if pere.is_none() {
-            pere = parents.first().copied();
+            pere = parents.iter().copied().find(|x| mere.is_none_or(|m| m.id != x.id));
         }
         if mere.is_none() {
-            mere = parents.iter().copied().find(|x| pere.map_or(true, |pp| pp.id != x.id));
+            mere = parents.iter().copied().find(|x| pere.is_none_or(|pp| pp.id != x.id));
         }
         (pere, mere)
     }
@@ -441,5 +443,15 @@ mod tests {
         // Numérique : I2 avant I10.
         assert_eq!(ids(a.rechercher("", Tri::Numerotation, &vide)), vec!["@I1@", "@I2@", "@I9@", "@I10@"]);
         assert_eq!(plier("Œuvray-Lefèvre"), "oeuvray-lefevre");
+    }
+
+    #[test]
+    fn mere_seule() {
+        let a = analyser("0 @I1@ INDI\n1 NAME A /X/\n0 @I2@ INDI\n1 NAME B /X/\n1 SEX F\n0 @F1@ FAM\n1 WIFE @I2@\n1 CHIL @I1@\n0 TRLR\n");
+        let (pere, mere) = a.pere_mere(a.personne("@I1@").unwrap());
+        assert!(pere.is_none(), "la mère seule ne doit pas tenir aussi la place du père");
+        assert_eq!(mere.unwrap().id, "@I2@");
+        // Ahnentafel : la mère reçoit le seul numéro 3.
+        assert_eq!(a.ahnentafel("@I1@")["@I2@"], vec![3]);
     }
 }
